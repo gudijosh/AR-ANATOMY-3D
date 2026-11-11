@@ -14,6 +14,7 @@ const VISION_WASM = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${VISI
 const MODEL_BASE = "https://storage.googleapis.com/mediapipe-models/";
 const FACE_MODEL = MODEL_BASE + "face_landmarker/face_landmarker/float16/1/face_landmarker.task";
 const HAND_MODEL = MODEL_BASE + "hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
+const POSE_MODEL = MODEL_BASE + "pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task";
 const DEMO = location.hash === "#demo";   // a pretend head and hand, no camera needed
 // test mode: ?photo=<same-site image>&crop=x,y,w,h feeds a still picture to the trackers instead of the camera
 // only pictures from this same site are accepted, so a shared link cannot make the page load someone else's image
@@ -33,13 +34,61 @@ async function photoStream(url, crop) {
 }
 
 // ------------------------------------------------------------ settings
+// every switchable layer, grouped into the categories of the side panel ([key, dot colour])
+const CATEGORIES = [
+  { id: "bones", dot: "#bfe3ff", items: [["skull", "#bfe3ff"], ["spine", "#bfe3ff"], ["ribs", "#bfe3ff"], ["shoulders", "#bfe3ff"], ["arms", "#bfe3ff"],
+    ["hands", "#b9c6d2"], ["pelvis", "#bfe3ff"], ["legs", "#bfe3ff"], ["feet", "#bfe3ff"]] },
+  { id: "organs", dot: "#ff9fc0", items: [["brain", "#ff9fc0"], ["eyes", "#f3d65a"], ["heart", "#ff5d73"], ["lungs", "#ff9fc0"], ["liver", "#ffa25e"],
+    ["stomach", "#ffd27a"], ["intestines", "#ffbf9c"], ["kidneys", "#ff7f6b"], ["pancreas", "#fff08a"], ["diaphragm", "#d59bff"]] },
+  { id: "muscles", dot: "#ff6b5e", items: [["muscles", "#ff6b5e"], ["trunkMuscles", "#ff6b5e"], ["armMuscles", "#ff6b5e"], ["legMuscles", "#ff6b5e"]] },
+  { id: "skin", dot: "#6fb6ff", items: [["outline", "#6fb6ff"], ["bodyOutline", "#6fb6ff"]] },
+];
+const BODY_KEYS = ["spine", "ribs", "shoulders", "arms", "pelvis", "legs", "feet", "heart", "lungs", "liver", "stomach", "intestines",
+  "kidneys", "pancreas", "diaphragm", "trunkMuscles", "armMuscles", "legMuscles", "bodyOutline"];
 const DEFAULTS = {
   skull: true, brain: false, muscles: false, eyes: true, outline: true, hands: true,
+  ...Object.fromEntries(BODY_KEYS.map(k => [k, false])),
   style: "xray", bright: 1, real: 0.12, feather: 0.2, reveal: "whole", cut: 0.5, showdata: false,
   fs: 1, fw: 1, fh: 1, fd: 1, fx: 0, fy: 0, fz: 0, labels: false,
 };
 const STORE = "ar-anatomy-3d-settings";
-const LAYERS = ["skull", "brain", "muscles", "eyes", "outline", "hands"];
+const LAYERS = CATEGORIES.flatMap(c => c.items.map(i => i[0]));
+const bodyActive = () => BODY_KEYS.some(k => S[k]);
+
+// the side panel's categories: a header that opens the list, a switch for the whole category, then one switch per part
+(function buildCategories() {
+  const host = $("cats");
+  for (const c of CATEGORIES) {
+    const wrap = document.createElement("div");
+    wrap.className = "cat"; wrap.dataset.cat = c.id;
+    wrap.innerHTML = `<div class="cat-head">
+        <button type="button" class="cat-toggle" aria-expanded="false" aria-controls="cat-${c.id}">
+          <i style="--c:${c.dot}"></i><span data-i18n="cat.${c.id}"></span><span class="cat-count" id="cnt-${c.id}"></span>
+          <svg class="chev" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <input type="checkbox" class="cat-all" id="all-${c.id}" data-i18n-aria="cat.all.${c.id}">
+      </div>
+      <div class="cat-body" id="cat-${c.id}" hidden><div class="checks">${c.items.map(([k, col]) =>
+        `<label class="ck"><i style="--c:${col}"></i><span data-i18n="l.${k}"></span><input type="checkbox" id="L_${k}"></label>`).join("")}</div></div>`;
+    host.appendChild(wrap);
+    const btn = wrap.querySelector(".cat-toggle"), body = wrap.querySelector(".cat-body");
+    btn.addEventListener("click", () => {
+      const open = btn.getAttribute("aria-expanded") !== "true";
+      btn.setAttribute("aria-expanded", String(open)); body.hidden = !open; wrap.classList.toggle("open", open);
+    });
+    wrap.querySelector(".cat-all").addEventListener("change", e => {
+      for (const [k] of c.items) S[k] = e.target.checked;
+      save(); showSettings();
+    });
+  }
+})();
+function showCategories() {
+  for (const c of CATEGORIES) {
+    const on = c.items.filter(([k]) => S[k]).length, all = $("all-" + c.id);
+    $("cnt-" + c.id).textContent = on + "/" + c.items.length;
+    all.checked = on === c.items.length; all.indeterminate = on > 0 && on < c.items.length;
+  }
+}
 const SLIDERS = ["bright", "real", "feather", "cut", "fs", "fw", "fh", "fd", "fx", "fy", "fz"];
 const S = { ...DEFAULTS };
 try { Object.assign(S, JSON.parse(localStorage.getItem(STORE) || "{}")); } catch { /* ignore */ }
@@ -48,6 +97,7 @@ const save = () => { try { localStorage.setItem(STORE, JSON.stringify(S)); } cat
 let overlay = null;
 function showSettings() {
   for (const k of LAYERS) $("L_" + k).checked = S[k];
+  showCategories();
   for (const b of $("style").children) b.classList.toggle("on", b.dataset.style === S.style);
   for (const k of SLIDERS) {
     const el = $(k); el.value = S[k];
@@ -63,7 +113,7 @@ function showSettings() {
   $("cutrow").hidden = S.reveal === "whole";
   $("cutlabel").textContent = t(S.reveal === "lens" ? "lens" : "cut");
 }
-for (const k of LAYERS) $("L_" + k).addEventListener("change", e => { S[k] = e.target.checked; save(); });
+for (const k of LAYERS) $("L_" + k).addEventListener("change", e => { S[k] = e.target.checked; save(); showCategories(); });
 for (const b of $("style").children) b.addEventListener("click", () => { S.style = b.dataset.style; save(); showSettings(); overlay && overlay.applyStyle(); });
 for (const k of SLIDERS) $(k).addEventListener("input", e => { S[k] = parseFloat(e.target.value); save(); showSettings(); });
 $("labels").addEventListener("change", e => { S.labels = e.target.checked; save(); });
@@ -71,12 +121,16 @@ $("reveal").addEventListener("change", e => { S.reveal = e.target.value; S.cut =
 $("showdata").addEventListener("change", e => { S.showdata = e.target.checked; save(); showSettings(); });
 $("fitreset").addEventListener("click", () => { S.fs = S.fw = S.fh = S.fd = 1; S.fx = S.fy = S.fz = 0; save(); showSettings(); });
 for (const b of document.querySelectorAll("[data-preset]")) b.addEventListener("click", () => {
-  const p = b.dataset.preset;
-  S.skull = p === "skull" || p === "all";
-  S.brain = p === "brain" || p === "all";
-  S.muscles = p === "muscles" || p === "all";
-  S.eyes = p !== "brain";
-  S.outline = true;
+  const p = b.dataset.preset, cat = id => CATEGORIES.find(c => c.id === id).items.map(i => i[0]);
+  const on = new Set({
+    head: ["skull", "brain", "eyes", "outline"],
+    skull: ["skull", "eyes", "outline", "hands"], brain: ["brain", "outline"],
+    skeleton: [...cat("bones"), "outline", "bodyOutline"],
+    organs: [...cat("organs"), "outline", "bodyOutline"],
+    muscles: [...cat("muscles"), "eyes", "outline", "bodyOutline"],
+    all: LAYERS,
+  }[p] || []);
+  for (const k of LAYERS) S[k] = on.has(k);
   save(); showSettings();
 });
 translatePage(); showSettings(); drawStatus();
@@ -93,9 +147,9 @@ async function loadOverlay() {
 }
 
 // ------------------------------------------------------------ tracking
-let face = null, hand = null;
+let face = null, hand = null, body = null;
 async function loadTrackers() {
-  const { FilesetResolver, FaceLandmarker, HandLandmarker } = await import("@mediapipe/tasks-vision");
+  const { FilesetResolver, FaceLandmarker, HandLandmarker, PoseLandmarker } = await import("@mediapipe/tasks-vision");
   const files = await FilesetResolver.forVisionTasks(VISION_WASM);
   const makeFace = delegate => FaceLandmarker.createFromOptions(files, {
     baseOptions: { modelAssetPath: FACE_MODEL, delegate }, runningMode: "VIDEO", numFaces: 1,
@@ -107,6 +161,11 @@ async function loadTrackers() {
   try { face = await makeFace("GPU"); } catch { face = await makeFace("CPU"); }
   try { try { hand = await makeHand("GPU"); } catch { hand = await makeHand("CPU"); } }
   catch { hand = null; }   // the head still works without hands
+  const makeBody = delegate => PoseLandmarker.createFromOptions(files, {
+    baseOptions: { modelAssetPath: POSE_MODEL, delegate }, runningMode: "VIDEO", numPoses: 1, outputSegmentationMasks: true,
+  });
+  try { try { body = await makeBody("GPU"); } catch { body = await makeBody("CPU"); } }
+  catch { body = null; }   // the head and hands still work without the body
 }
 
 function runLive() {
@@ -139,12 +198,23 @@ function runLive() {
         // the tracker names hands as if the picture were flipped; ours isn't, so swap them
         rightSides = handList.map((h, i) => !!(sides[i] && sides[i][0] && sides[i][0].categoryName === "Left"));
       }
+      if (body && bodyActive()) {
+        const pr = body.detectForVideo(video, now);
+        bodyPose = null;
+        if (pr.landmarks && pr.landmarks[0]) {
+          const mk = pr.segmentationMasks && pr.segmentationMasks[0];
+          const mask = mk ? { data: Float32Array.from(mk.getAsFloat32Array()), width: mk.width, height: mk.height } : null;
+          if (mk && mk.close) mk.close();
+          bodyPose = { lms: pr.landmarks[0], mask };
+        }
+      } else bodyPose = null;
     } catch (e) { say("st.trackerError", "bad", { msg: e.message }); return; }
     const found = overlay.headFound;
     say(found ? (handList.length ? "st.trackingHands" : "st.tracking") : handList.length ? "st.handOnly" : "st.noFace",
       found || handList.length ? "ok" : "bad");
-    overlay.render(now, faceLms, handList, rightSides, pointer);
+    overlay.render(now, faceLms, handList, rightSides, pointer, bodyPose);
   };
+  let bodyPose = null;
   tick();
 }
 
@@ -166,8 +236,10 @@ function runDemo() {
     requestAnimationFrame(tick);   // a still scene keeps redrawing the same moment
     const now = performance.now(), time = still ? 1.2 : now / 1000;
     const { W, H } = overlay.size;
-    const f = overlay.demoFace(time);
+    const far = bodyActive();   // with body layers on, the pretend camera steps back to show the whole body
+    const f = overlay.demoFace(time, far);
     overlay.setHead(f.matrix, f.lms, 0.5 + 0.5 * Math.sin(time * 1.3));
+    if (far) { overlay.render(now, f.lms, f.hands, f.sides, pointer, { lms: f.body }); return; }
     const ky = 0.021, kx = ky * H / W, curl = 0.5 + 0.5 * Math.sin(time * 0.9);
     const pts = DEMO_HAND.map(([x, y, z], i) => {
       const joint = i % 4 === 0 && i ? 2 : i % 4 === 3 ? 1.2 : i % 4 === 2 ? 0.6 : 0;   // fingertips bend most

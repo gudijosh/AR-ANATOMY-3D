@@ -454,7 +454,7 @@ function simplifyKeep(m, triangles) {
 out.push(["muscles", simplifyKeep(muscles, 30000)]);
 for (const [name, m] of Object.entries(handMeshes)) out.push([name, simplify(m, name === "hand_palm" ? 4000 : 450)]);
 
-const chunks = [], meta = { source: "BodyParts3D, (c) The Database Center for Life Science, CC BY-SA 2.1 JP; simplified and re-aligned; face muscles modelled on its skull and skin", meshes: [], labels, jawPivot: jawPivot.map(v => +v.toFixed(3)), headMiddle: HC, hand: hand.map(p => p.map(v => +v.toFixed(3))) };
+const chunks = [], meta = { source: "BodyParts3D, (c) The Database Center for Life Science, CC BY-SA 2.1 JP; simplified and re-aligned; face muscles modelled on its skull and skin", meshes: [], labels, jawPivot: jawPivot.map(v => +v.toFixed(3)), headMiddle: HC, fit: { s: T.s, R: T.R, t: T.t }, hand: hand.map(p => p.map(v => +v.toFixed(3))) };
 let offset = 0;
 for (const [name, m] of out) {
   const nv = m.pos.length / 3;

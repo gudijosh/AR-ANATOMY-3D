@@ -1,6 +1,9 @@
 // The 3D overlay: anatomy pinned to the tracked head, bones on tracked hands, labels and the data read-out.
 import * as THREE from "three";
-import { loadAnatomy, LABELS, JAW_PIVOT, HEAD_MIDDLE } from "./anatomy.js";
+import { loadAnatomy, LABELS, JAW_PIVOT, HEAD_MIDDLE, HAND_JOINTS } from "./anatomy.js";
+import { createBody, BODY_LAYER_KEYS, BODY_META } from "./body.js";
+const BODY_GROUPS = [["spine", "pelvis", "ribs", "shoulders", "arms", "legs", "feet"],
+  ["heart", "lungs", "liver", "stomach", "intestines", "kidneys", "pancreas", "diaphragm"], ["trunkMuscles", "armMuscles", "legMuscles"]];
 import { t, anatomyName } from "./i18n.js";
 
 // Points of the face tracker's own reference face (cm) used to pin the model to the picture.
@@ -11,16 +14,21 @@ export const FIT_POINTS = {
 };
 const FIT_IDS = Object.keys(FIT_POINTS).map(Number);
 const FINGER = [[1, 2], [2, 3], [3, 4], [5, 6], [6, 7], [7, 8], [9, 10], [10, 11], [11, 12], [13, 14], [14, 15], [15, 16], [17, 18], [18, 19], [19, 20]];
-export const LAYERS = ["skull", "brain", "muscles", "eyes", "outline", "hands"];
+export const LAYERS = ["skull", "brain", "muscles", "eyes", "outline", "hands", ...BODY_LAYER_KEYS];
 
 const VERT = /* glsl */`
 uniform mat4 uLocal; uniform float uFlatView;
+uniform float uBlend; uniform mat4 uTorsoA; uniform mat4 uTorsoB;   // torso pieces: shoulder frame above, hip frame below
 attribute vec2 aMuscle;
 varying vec3 vNormal; varying vec3 vToEye; varying vec3 vHead; varying vec2 vMuscle;
 void main() {
   vMuscle = aMuscle;
   vHead = (uLocal * vec4(position, 1.0)).xyz;
-  vec4 eye = modelViewMatrix * vec4(position, 1.0);
+  vec4 eye;
+  if (uBlend > 0.5) {
+    vec4 local = vec4(position, 1.0);
+    eye = viewMatrix * mix(uTorsoB * local, uTorsoA * local, smoothstep(0.0, 0.85, position.y));
+  } else eye = modelViewMatrix * vec4(position, 1.0);
   vNormal = normalize(normalMatrix * normal);
   vToEye = uFlatView > 0.5 ? vec3(0.0, 0.0, 1.0) : normalize(-eye.xyz);
   gl_Position = projectionMatrix * eye;
@@ -92,6 +100,7 @@ export async function createOverlay({ stage, S }) {
         uAlpha: { value: 1 }, uGain: { value: 1 }, uNeck: { value: 0 }, uEdge: { value: 0 }, uCutOn: { value: 0 },
         uCutSoft: { value: 0 }, uPlane: { value: new THREE.Vector4(1, 0, 0, 0) }, uLocal: { value: new THREE.Matrix4() },
         uFlatView: { value: 0 }, uFibers: { value: 0 },
+        uBlend: { value: 0 }, uTorsoA: { value: new THREE.Matrix4() }, uTorsoB: { value: new THREE.Matrix4() },
       },
       vertexShader: VERT, fragmentShader: FRAG, side: THREE.DoubleSide, transparent: true,
       depthTest: false, depthWrite: false, blending: kind === 2 ? THREE.NormalBlending : THREE.AdditiveBlending,
@@ -126,10 +135,13 @@ export async function createOverlay({ stage, S }) {
     return { group, palm: mk(shape.hand_palm), fingers: FINGER.map(([a, b]) => mk(shape[`hand_b_${a}_${b}`])), pts: null };
   });
   const handMeshes = r => [r.palm, ...r.fingers];
+  const body = await createBody({ scene: handScene, material });
+  body.setSize(() => W, () => H);
 
   function forEachMaterial(fn) {
     for (const k in parts) fn(parts[k].mesh.material, parts[k]);
     for (const r of hands) for (const m of handMeshes(r)) fn(m.material, { layer: "hands" });
+    body.eachMaterial((m, info) => fn(m, info));
   }
   function applyStyle() {
     const solid = S.style === "solid";
@@ -375,7 +387,12 @@ export async function createOverlay({ stage, S }) {
       const items = headLabels(lens);
       const xs = items.map(i => i.ax).sort((p, q) => p - q), mid = xs.length ? xs[xs.length >> 1] : hx;
       split = split ? split + ((hx + mid) / 2 - split) * 0.2 : (hx + mid) / 2;
-      drawColumns(g, items, hx, Math.abs(e.x - c.x), "h:", split);
+      const b = body.labelItems(S, lens, anatomyName);
+      if (b && b.items.length) drawColumns(g, [...items, ...b.items], b.cx, b.half, "b:");   // one layout, so head and body names never overlap
+      else drawColumns(g, items, hx, Math.abs(e.x - c.x), "h:", split);
+    } else {
+      const b = body.labelItems(S, lens, anatomyName);
+      if (b && b.items.length) drawColumns(g, b.items, b.cx, b.half, "b:");
     }
     if (!S.hands) return;
     hands.forEach((rig, i) => {
@@ -393,8 +410,11 @@ export async function createOverlay({ stage, S }) {
 
   // ------------------------------------------------------------ one frame
   let ticks = 0, fps = 0, fpsAt = 0, dataAt = 0;
-  function render(now, face, handList, rightSides, pointer) {
+  function render(now, face, handList, rightSides, pointer, bodyPose) {
     const sg = shade.getContext("2d"); sg.clearRect(0, 0, W, H);
+    body.update(bodyPose && bodyPose.lms, W, H);
+    const bodyOn = BODY_LAYER_KEYS.some(k => S[k]);
+    if (bodyOn && bodyPose && bodyPose.mask) body.drawVeil(sg, bodyPose.mask, (1 - S.real) * 0.9, S.feather * 14);
     hands.forEach((rig, i) => {
       const lms = handList[i];
       if (lms && S.hands) {
@@ -408,6 +428,10 @@ export async function createOverlay({ stage, S }) {
     });
     if (!pose.found) head.visible = false;
     applyLayers();
+    {   // body: glowing layers add up, so share the light between bones, organs and muscles
+      const n = BODY_GROUPS.filter(c => c.some(k => S[k])).length, bshare = 1 / (0.4 + 0.6 * Math.max(1, n));
+      body.apply(S, layer => layer === "bodyOutline" ? 1 : bshare);
+    }
 
     let mask = "none", lens = null;
     if (S.reveal === "lens") {
@@ -462,12 +486,26 @@ export async function createOverlay({ stage, S }) {
   }
 
   // a pretend head pose and its landmarks, for the built-in demo
-  function demoFace(t) {
-    const m = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(-0.06 + 0.05 * Math.sin(t * 0.7), 0.42 * Math.sin(t * 0.5 + 0.9), 0.04, "YXZ"));
-    m.setPosition(-5 + 2 * Math.sin(t * 0.4), 1.5, -46);
+  // far = the whole body in view (the dataset's own body and hands, posed by its measured joints)
+  function demoFace(t, far = false) {
+    const dist = far ? 195 : 46;
+    const m = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(-0.06 + 0.05 * Math.sin(t * 0.7), (far ? 0.3 : 0.42) * Math.sin(t * 0.5 + 0.9), 0.04, "YXZ"));
+    m.setPosition(far ? -2 + 3 * Math.sin(t * 0.4) : -5 + 2 * Math.sin(t * 0.4), far ? 64 : 1.5, -dist);
+    const cv = new THREE.Vector3(), nv = new THREE.Vector3();
+    const proj = p => { cv.fromArray(p).applyMatrix4(m); nv.copy(cv).applyMatrix4(baseProj); return { x: (nv.x + 1) / 2, y: (1 - nv.y) / 2, cz: cv.z }; };
     const lms = [];
-    for (const id of FIT_IDS) { const v = new THREE.Vector3().fromArray(FIT_POINTS[id]).applyMatrix4(m).applyMatrix4(baseProj); lms[id] = { x: (v.x + 1) / 2, y: (1 - v.y) / 2, z: 0 }; }
-    return { matrix: m.elements, lms };
+    for (const id of FIT_IDS) { const q = proj(FIT_POINTS[id]); lms[id] = { x: q.x, y: q.y, z: 0 }; }
+    if (!far) return { matrix: m.elements, lms };
+    const xPerCm = 1 / (2 * dist * Math.tan(TRACKER_FOV / 2 * D2R) * (W / H));   // picture widths per cm at that distance
+    const J = BODY_META.joints, pts = {};
+    for (const k in J) pts[k] = proj(J[k]);
+    const hipZ = (pts[23].cz + pts[24].cz) / 2, bodyLms = [];
+    for (const k in pts) bodyLms[k] = { x: pts[k].x, y: pts[k].y, z: -(pts[k].cz - hipZ) * xPerCm, visibility: 1 };
+    const hand = (wrist, flip) => {
+      const w = J[wrist], raw = HAND_JOINTS.map(o => proj([w[0] + o[0] * flip * 1.07, w[1] + o[1] * 1.07, w[2] + o[2] * 1.07]));
+      return raw.map(q => ({ x: q.x, y: q.y, z: -(q.cz - raw[0].cz) * xPerCm }));
+    };
+    return { matrix: m.elements, lms, body: bodyLms, hands: [hand(16, 1), hand(15, -1)], sides: [true, false] };
   }
 
   return { setHead, loseHead, render, applyStyle, resize, demoFace, get size() { return { W, H }; }, get headFound() { return pose.found; } };
