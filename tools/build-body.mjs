@@ -215,7 +215,9 @@ const BUDGET = {
 const SKIN_TORSO = 7000;
 const meta = { source: "BodyParts3D, (c) The Database Center for Life Science, CC BY-SA 2.1 JP; simplified and split into body segments",
   segments: {}, meshes: [], labels, torsoK: +(shW / hipW).toFixed(5), joints: {} };
-for (const [k, F] of Object.entries(SEG)) meta.segments[k] = k === "torso" ? { kind: "torso" } : { kind: "limb", a: F.a, b: F.b, ref: F.ref };
+for (const [k, F] of Object.entries(SEG)) meta.segments[k] = k === "torso" ? { kind: "torso" } : { kind: "limb", a: F.a, b: F.b, ref: F.ref, len: +len(F.ex).toFixed(3) };
+// real sizes (cm), so the page can keep bone thickness and depth steady from one stable body scale
+Object.assign(meta, { shoulderW: +shW.toFixed(3), hipW: +hipW.toFixed(3), torsoH: +len(torsoE2).toFixed(3) });
 // joints in the head-tracker space (for the demo scene): the head file's fit maps the dataset onto the face
 const head = JSON.parse(fs.readFileSync(path.join(OUT, "anatomy.json"), "utf8"));
 const T = head.fit, applyT = p => add(mul([dot(T.R[0], p), dot(T.R[1], p), dot(T.R[2], p)], T.s), T.t);

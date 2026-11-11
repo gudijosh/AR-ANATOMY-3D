@@ -14,7 +14,7 @@ const VISION_WASM = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${VISI
 const MODEL_BASE = "https://storage.googleapis.com/mediapipe-models/";
 const FACE_MODEL = MODEL_BASE + "face_landmarker/face_landmarker/float16/1/face_landmarker.task";
 const HAND_MODEL = MODEL_BASE + "hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
-const POSE_MODEL = MODEL_BASE + "pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task";
+const POSE_MODEL = MODEL_BASE + "pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task";   // steadier than the lite one
 const DEMO = location.hash === "#demo";   // a pretend head and hand, no camera needed
 // test mode: ?photo=<same-site image>&crop=x,y,w,h feeds a still picture to the trackers instead of the camera
 // only pictures from this same site are accepted, so a shared link cannot make the page load someone else's image
@@ -163,6 +163,7 @@ async function loadTrackers() {
   catch { hand = null; }   // the head still works without hands
   const makeBody = delegate => PoseLandmarker.createFromOptions(files, {
     baseOptions: { modelAssetPath: POSE_MODEL, delegate }, runningMode: "VIDEO", numPoses: 1, outputSegmentationMasks: true,
+    minPoseDetectionConfidence: 0.6, minPosePresenceConfidence: 0.6, minTrackingConfidence: 0.7,
   });
   try { try { body = await makeBody("GPU"); } catch { body = await makeBody("CPU"); } }
   catch { body = null; }   // the head and hands still work without the body
@@ -206,6 +207,7 @@ function runLive() {
           const mask = mk ? { data: Float32Array.from(mk.getAsFloat32Array()), width: mk.width, height: mk.height } : null;
           if (mk && mk.close) mk.close();
           bodyPose = { lms: pr.landmarks[0], mask };
+          if (PHOTO) window.__bodyPose = bodyPose.lms;   // test mode only: lets a test read the raw points
         }
       } else bodyPose = null;
     } catch (e) { say("st.trackerError", "bad", { msg: e.message }); return; }
