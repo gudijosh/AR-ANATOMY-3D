@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AR ANATOMY 3D</title>
+<link rel="icon" href="data:,">
+  <script type="module" crossorigin src="./assets/index-DQFArqId.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-DNni2g3H.css">
+</head>
+<body>
+<header class="top">
+  <h1 data-i18n="title">AR ANATOMY 3D</h1>
+  <div class="top-right">
+    <div class="status"><span class="dot" aria-hidden="true"></span><div id="status">Click Start camera, then allow the camera.</div></div>
+    <div class="lang" role="group" data-i18n-aria="lang.group" aria-label="Language">
+      <button type="button" data-lang="en" lang="en" aria-label="English">EN</button>
+      <button type="button" data-lang="es" lang="es" aria-label="Español">ES</button>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+  <main class="stage-col">
+    <div class="stage" id="stage">
+      <video id="video" playsinline muted autoplay></video>
+      <canvas id="shade"></canvas>
+      <canvas id="gl"></canvas>
+      <canvas id="hud"></canvas>
+      <div id="intro">
+        <h2 data-i18n="intro.h">See inside.</h2>
+        <p data-i18n="intro.p">Watch the skull, brain and muscles move inside your own head, live through your camera. Hold up a hand to see its bones.</p>
+        <button class="big" id="start" type="button" data-i18n="start">Start camera</button>
+      </div>
+    </div>
+    <p class="note" data-i18n="note">Processed on this device, never uploaded. A simplified model of a typical head, not a scan and not a medical tool.</p>
+  </main>
+
+  <aside>
+    <section class="group">
+      <h3 data-i18n="h.layers">Layers</h3>
+      <div class="chips">
+        <button type="button" data-preset="skull" data-i18n="p.skull">Skull</button>
+        <button type="button" data-preset="brain" data-i18n="p.brain">Brain</button>
+        <button type="button" data-preset="muscles" data-i18n="p.muscles">Muscles</button>
+        <button type="button" data-preset="all" data-i18n="p.all">Everything</button>
+      </div>
+      <div class="checks">
+        <label class="ck"><i style="--c:#bfe3ff"></i><span data-i18n="l.skull">Skull</span><input type="checkbox" id="L_skull"></label>
+        <label class="ck"><i style="--c:#ff9fc0"></i><span data-i18n="l.brain">Brain</span><input type="checkbox" id="L_brain"></label>
+        <label class="ck"><i style="--c:#ff6b5e"></i><span data-i18n="l.muscles">Muscles</span><input type="checkbox" id="L_muscles"></label>
+        <label class="ck"><i style="--c:#f3d65a"></i><span data-i18n="l.eyes">Eyes</span><input type="checkbox" id="L_eyes"></label>
+        <label class="ck"><i style="--c:#6fb6ff"></i><span data-i18n="l.outline">Head outline</span><input type="checkbox" id="L_outline"></label>
+        <label class="ck"><i style="--c:#b9c6d2"></i><span data-i18n="l.hands">Hand bones</span><input type="checkbox" id="L_hands"></label>
+      </div>
+      <label class="ck"><span data-i18n="labels">Show labels</span><input type="checkbox" id="labels"></label>
+    </section>
+
+    <section class="group">
+      <h3 data-i18n="h.look">Look</h3>
+      <div class="seg" id="style">
+        <button type="button" data-style="xray" class="on" data-i18n="s.xray">X-ray</button>
+        <button type="button" data-style="solid" data-i18n="s.solid">Solid</button>
+      </div>
+      <div class="row"><label for="bright" data-i18n="bright">Brightness</label><input id="bright" type="range" min="0.3" max="2.2" step="0.01"></div>
+    </section>
+
+    <section class="group">
+      <h3 data-i18n="h.mixed">Mixed reality</h3>
+      <div class="row"><label for="real" data-i18n="real">See-through</label><input id="real" type="range" min="0" max="1" step="0.01"></div>
+      <div class="row"><label for="feather"><span data-i18n="feather">Edge feather</span> <b id="featherv">20%</b></label><input id="feather" type="range" min="0" max="1" step="0.01"></div>
+      <div class="row">
+        <label for="reveal" data-i18n="reveal">Reveal</label>
+        <select id="reveal">
+          <option value="whole" data-i18n="r.whole">Whole head</option>
+          <option value="left" data-i18n="r.left">Left half only</option>
+          <option value="right" data-i18n="r.right">Right half only</option>
+          <option value="top" data-i18n="r.top">Top of the head only</option>
+          <option value="bottom" data-i18n="r.bottom">Lower face only</option>
+          <option value="lens" data-i18n="r.lens">X-ray lens (follows your fingertip)</option>
+        </select>
+      </div>
+      <div class="row" id="cutrow" hidden><label for="cut" id="cutlabel">Cut position</label><input id="cut" type="range" min="0" max="1" step="0.005"></div>
+      <label class="ck"><span data-i18n="showdata">Tracking data</span><input type="checkbox" id="showdata"></label>
+      <pre id="data" hidden></pre>
+    </section>
+
+    <details class="group fold">
+      <summary><h3 data-i18n="h.fit">Fit to my head</h3></summary>
+      <div class="row"><label for="fs"><span data-i18n="f.size">Size</span> <b id="fsv">100%</b></label><input id="fs" type="range" min="0.7" max="1.4" step="0.005"></div>
+      <div class="row"><label for="fw"><span data-i18n="f.width">Width</span> <b id="fwv">100%</b></label><input id="fw" type="range" min="0.8" max="1.25" step="0.005"></div>
+      <div class="row"><label for="fh"><span data-i18n="f.height">Height</span> <b id="fhv">100%</b></label><input id="fh" type="range" min="0.8" max="1.25" step="0.005"></div>
+      <div class="row"><label for="fd"><span data-i18n="f.depth">Depth</span> <b id="fdv">100%</b></label><input id="fd" type="range" min="0.8" max="1.25" step="0.005"></div>
+      <div class="row"><label for="fx"><span data-i18n="f.x">Left / right</span> <b id="fxv">0.0 cm</b></label><input id="fx" type="range" min="-3" max="3" step="0.1"></div>
+      <div class="row"><label for="fy"><span data-i18n="f.y">Up / down</span> <b id="fyv">0.0 cm</b></label><input id="fy" type="range" min="-4" max="4" step="0.1"></div>
+      <div class="row"><label for="fz"><span data-i18n="f.z">Forward / back</span> <b id="fzv">0.0 cm</b></label><input id="fz" type="range" min="-4" max="4" step="0.1"></div>
+      <p class="small" data-i18n="tip">Tip: choose Solid, set See-through to about half, then line the skull up with your face.</p>
+      <button class="linkbtn" id="fitreset" type="button" data-i18n="reset" data-i18n-aria="reset" aria-label="Reset fit">Reset fit</button>
+    </details>
+
+    <p class="small credit" data-i18n="credit">Anatomy shapes are simplified approximations made for this page.</p>
+  </aside>
+</div>
+</body>
+</html>
