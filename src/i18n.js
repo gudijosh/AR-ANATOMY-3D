@@ -9,8 +9,16 @@ const UI = {
     "start": "Start camera",
     "note": "Processed on this device, never uploaded. A real 3D dataset of one adult, fitted to your head: not a scan of you and not a medical tool.",
     "h.layers": "Layers", "h.look": "Look", "h.mixed": "Mixed reality", "h.fit": "Fit to my head",
-    "p.skull": "Skull", "p.brain": "Brain", "p.muscles": "Muscles", "p.all": "Everything",
-    "l.skull": "Skull", "l.brain": "Brain", "l.muscles": "Muscles", "l.eyes": "Eyes", "l.outline": "Head outline", "l.hands": "Hand bones",
+    "p.head": "Head", "p.skeleton": "Skeleton", "p.organs": "Organs", "p.skull": "Skull", "p.brain": "Brain", "p.muscles": "Muscles", "p.all": "Everything",
+    "cat.bones": "Bones", "cat.organs": "Organs", "cat.muscles": "Muscles", "cat.skin": "Skin outline",
+    "cat.all.bones": "All bones", "cat.all.organs": "All organs", "cat.all.muscles": "All muscles", "cat.all.skin": "Whole skin outline",
+    "l.skull": "Skull", "l.spine": "Spine", "l.ribs": "Ribs & sternum", "l.shoulders": "Shoulder blades", "l.arms": "Arms",
+    "l.hands": "Hands", "l.pelvis": "Pelvis", "l.legs": "Legs", "l.feet": "Feet",
+    "l.brain": "Brain", "l.eyes": "Eyes", "l.heart": "Heart", "l.lungs": "Lungs", "l.liver": "Liver", "l.stomach": "Stomach",
+    "l.intestines": "Intestines", "l.kidneys": "Kidneys & bladder", "l.pancreas": "Pancreas", "l.diaphragm": "Diaphragm",
+    "l.muscles": "Face", "l.trunkMuscles": "Neck & trunk", "l.armMuscles": "Arms", "l.legMuscles": "Legs",
+    "l.outline": "Head", "l.bodyOutline": "Body",
+    "st.bodyHint": "Step back so the camera sees your body.",
     "labels": "Show labels",
     "s.xray": "X-ray", "s.solid": "Solid", "bright": "Brightness",
     "real": "See-through", "feather": "Edge feather", "reveal": "Reveal",
@@ -56,8 +64,16 @@ const UI = {
     "start": "Iniciar cámara",
     "note": "Se procesa en este dispositivo y nunca se sube. Es un modelo 3D real de un adulto ajustado a tu cabeza: no es un escaneo tuyo ni una herramienta médica.",
     "h.layers": "Capas", "h.look": "Aspecto", "h.mixed": "Realidad mixta", "h.fit": "Ajustar a mi cabeza",
-    "p.skull": "Cráneo", "p.brain": "Cerebro", "p.muscles": "Músculos", "p.all": "Todo",
-    "l.skull": "Cráneo", "l.brain": "Cerebro", "l.muscles": "Músculos", "l.eyes": "Ojos", "l.outline": "Contorno", "l.hands": "Huesos de la mano",
+    "p.head": "Cabeza", "p.skeleton": "Esqueleto", "p.organs": "Órganos", "p.skull": "Cráneo", "p.brain": "Cerebro", "p.muscles": "Músculos", "p.all": "Todo",
+    "cat.bones": "Huesos", "cat.organs": "Órganos", "cat.muscles": "Músculos", "cat.skin": "Contorno de la piel",
+    "cat.all.bones": "Todos los huesos", "cat.all.organs": "Todos los órganos", "cat.all.muscles": "Todos los músculos", "cat.all.skin": "Todo el contorno",
+    "l.skull": "Cráneo", "l.spine": "Columna", "l.ribs": "Costillas y esternón", "l.shoulders": "Clavículas y escápulas", "l.arms": "Brazos",
+    "l.hands": "Manos", "l.pelvis": "Pelvis", "l.legs": "Piernas", "l.feet": "Pies",
+    "l.brain": "Cerebro", "l.eyes": "Ojos", "l.heart": "Corazón", "l.lungs": "Pulmones", "l.liver": "Hígado", "l.stomach": "Estómago",
+    "l.intestines": "Intestinos", "l.kidneys": "Riñones y vejiga", "l.pancreas": "Páncreas", "l.diaphragm": "Diafragma",
+    "l.muscles": "Cara", "l.trunkMuscles": "Cuello y tronco", "l.armMuscles": "Brazos", "l.legMuscles": "Piernas",
+    "l.outline": "Cabeza", "l.bodyOutline": "Cuerpo",
+    "st.bodyHint": "Aléjate para que la cámara vea tu cuerpo.",
     "labels": "Mostrar nombres",
     "s.xray": "Rayos X", "s.solid": "Sólido", "bright": "Brillo",
     "real": "Transparencia", "feather": "Bordes suaves", "reveal": "Mostrar",
@@ -106,6 +122,31 @@ const NAMES_ES = {
   "Masseter": "Masetero", "Orbicularis oris": "Orbicular de la boca", "Depressor anguli oris": "Depresor del ángulo de la boca",
   "Mentalis": "Músculo mentoniano", "Distal phalanx": "Falange distal", "Middle phalanx": "Falange media",
   "Proximal phalanx": "Falange proximal", "Metacarpal": "Metacarpiano", "Carpal bones (wrist)": "Huesos del carpo (muñeca)",
+  "Levator labii superioris": "Elevador del labio superior", "Buccinator": "Buccinador", "Sternocleidomastoid": "Esternocleidomastoideo",
+  "Procerus": "Prócer", "Occipitalis": "Músculo occipital",
+  // body
+  "Cervical vertebrae": "Vértebras cervicales", "Thoracic vertebrae": "Vértebras torácicas", "Lumbar vertebrae": "Vértebras lumbares",
+  "Hip bone": "Hueso de la cadera (coxal)", "Sacrum": "Sacro", "Rib cage": "Caja torácica (costillas y esternón)", "Clavicle": "Clavícula",
+  "Scapula": "Escápula (omóplato)", "Humerus": "Húmero", "Radius": "Radio", "Ulna": "Cúbito", "Femur": "Fémur", "Patella": "Rótula",
+  "Tibia": "Tibia", "Fibula": "Peroné", "Foot bones": "Huesos del pie", "Heart": "Corazón", "Lung": "Pulmón", "Trachea": "Tráquea",
+  "Liver": "Hígado", "Gallbladder": "Vesícula biliar", "Esophagus": "Esófago", "Stomach": "Estómago", "Duodenum": "Duodeno",
+  "Small intestine": "Intestino delgado", "Large intestine": "Intestino grueso", "Kidney": "Riñón", "Adrenal gland": "Glándula suprarrenal",
+  "Urinary bladder": "Vejiga urinaria", "Pancreas": "Páncreas", "Diaphragm": "Diafragma",
+  "Deltoid": "Deltoides", "Pectoralis major": "Pectoral mayor", "Pectoralis minor": "Pectoral menor", "Biceps brachii": "Bíceps braquial",
+  "Triceps brachii": "Tríceps braquial", "Brachialis": "Braquial", "Brachioradialis": "Braquiorradial", "Rectus abdominis": "Recto del abdomen",
+  "External oblique": "Oblicuo externo", "Internal oblique": "Oblicuo interno", "Serratus anterior": "Serrato anterior", "Trapezius": "Trapecio",
+  "Latissimus dorsi": "Dorsal ancho", "Gluteus maximus": "Glúteo mayor", "Gluteus medius": "Glúteo medio", "Rectus femoris": "Recto femoral",
+  "Vastus lateralis": "Vasto lateral", "Vastus medialis": "Vasto medial", "Sartorius": "Sartorio", "Gracilis": "Grácil",
+  "Adductor longus": "Aductor largo", "Adductor magnus": "Aductor mayor", "Biceps femoris": "Bíceps femoral", "Semitendinosus": "Semitendinoso",
+  "Tensor fasciae latae": "Tensor de la fascia lata", "Gastrocnemius": "Gastrocnemio (gemelos)", "Soleus": "Sóleo",
+  "Tibialis anterior": "Tibial anterior", "Fibularis longus": "Peroneo largo", "Iliopsoas": "Iliopsoas", "Infraspinatus": "Infraespinoso",
+  "Teres major": "Redondo mayor", "Rhomboid major": "Romboides mayor", "Erector spinae": "Erector de la columna",
+  "Flexor carpi radialis": "Flexor radial del carpo", "Extensor digitorum": "Extensor de los dedos", "Pronator teres": "Pronador redondo",
+};
+// nicer English for some dataset names
+const NAMES_EN = {
+  "Cervical vertebral column": "Cervical vertebrae", "Thoracic vertebral column": "Thoracic vertebrae", "Lumbar vertebral column": "Lumbar vertebrae",
+  "Foot": "Foot bones",
 };
 
 const KEY = "ar-anatomy-3d-lang";
@@ -121,7 +162,7 @@ export function t(key, vars) {
   if (vars) for (const k in vars) s = s.replace("{" + k + "}", vars[k]);
   return s;
 }
-export const anatomyName = name => (lang === "es" && NAMES_ES[name]) || name;
+export const anatomyName = name => { const en = NAMES_EN[name] || name; return (lang === "es" && NAMES_ES[en]) || en; };
 export function onLangChange(fn) { listeners.push(fn); }
 
 // fill every element marked data-i18n (its text) or data-i18n-aria (its accessible name)
