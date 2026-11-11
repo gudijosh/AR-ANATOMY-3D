@@ -2,6 +2,7 @@
 import * as THREE from "three";
 import { loadAnatomy, LABELS, JAW_PIVOT, HEAD_MIDDLE, HAND_JOINTS } from "./anatomy.js";
 import { createBody, BODY_LAYER_KEYS, BODY_META } from "./body.js";
+import { OneEuro, OneEuro3 } from "./filter.js";
 const BODY_GROUPS = [["spine", "pelvis", "ribs", "shoulders", "arms", "legs", "feet"],
   ["heart", "lungs", "liver", "stomach", "intestines", "kidneys", "pancreas", "diaphragm"], ["trunkMuscles", "armMuscles", "legMuscles"]];
 import { t, anatomyName } from "./i18n.js";
@@ -207,13 +208,25 @@ export async function createOverlay({ stage, S }) {
     return { k, dx: (bx - k * ax) / (W / 2), dy: (by - k * ay) / (H / 2), err };
   }
 
+  const headF = { pos: new OneEuro3(1.0, 0.04, 0.6, 0.02), k: new OneEuro(0.8, 0.5), dx: new OneEuro(1.0, 0.8), dy: new OneEuro(1.0, 0.8), lastRot: 0, fovFrames: 0 };
   function setHead(matrix, lms, jawOpen) {
     M.fromArray(matrix);
     const e = M.elements;   // accept a row-major matrix too
     if (Math.abs(e[12]) + Math.abs(e[13]) + Math.abs(e[14]) < 1e-6 && Math.abs(e[3]) + Math.abs(e[7]) + Math.abs(e[11]) > 1e-3) M.transpose();
     M.decompose(P3, Q, Sz);
-    if (!pose.found) { pose.pos.copy(P3); pose.rot.copy(Q); pose.size.copy(Sz); pose.k = 1; pose.dx = pose.dy = 0; }
-    else { pose.pos.lerp(P3, 0.6); pose.rot.slerp(Q, 0.55); pose.size.lerp(Sz, 0.5); }
+    const now = performance.now();
+    if (!pose.found) {
+      pose.pos.copy(P3); pose.rot.copy(Q); pose.size.copy(Sz); pose.k = 1; pose.dx = pose.dy = 0;
+      headF.pos.reset(); headF.k.reset(); headF.dx.reset(); headF.dy.reset(); headF.pos.filter(P3.clone(), now); headF.lastRot = now;
+    } else {
+      // steady while still, quick when moving: position through an adaptive filter, turning eased by its own speed
+      pose.pos.copy(headF.pos.filter(P3.clone(), now));
+      const dt = Math.max(0.001, (now - headF.lastRot) / 1000); headF.lastRot = now;
+      const turnSpeed = pose.rot.angleTo(Q) / dt;   // radians per second
+      const cutoff = 1.2 + 0.9 * turnSpeed, tau = 1 / (2 * Math.PI * cutoff);
+      pose.rot.slerp(Q, 1 / (1 + tau / dt));
+      pose.size.lerp(Sz, 0.3);
+    }
     pose.found = true;
     pose.jaw += (jawOpen - pose.jaw) * 0.6;
     // The tracker assumes a wide 63° camera; real webcams (and photos) see a narrower view, so the head really
@@ -226,13 +239,15 @@ export async function createOverlay({ stage, S }) {
       if (errAt(m1) < errAt(m2)) hi = m2; else lo = m1;
     }
     const bestFov = (lo + hi) / 2;
-    pose.fov = pose.fitSet ? pose.fov + (bestFov - pose.fov) * 0.15 : bestFov;
+    // a camera's view angle never changes, so once it has settled it only drifts very slowly
+    headF.fovFrames = pose.fitSet ? headF.fovFrames + 1 : 0;
+    pose.fov = pose.fitSet ? pose.fov + (bestFov - pose.fov) * (headF.fovFrames < 30 ? 0.15 : 0.02) : bestFov;
     const fit = fitScreen(pose.fov, lms);
     if (fit) {
       if (!pose.fitSet) { pose.k = fit.k; pose.dx = fit.dx; pose.dy = fit.dy; pose.fitSet = true; }
-      pose.k += (fit.k - pose.k) * 0.5;
-      pose.dx += (fit.dx - pose.dx) * 0.7;
-      pose.dy += (fit.dy - pose.dy) * 0.7;
+      pose.k = headF.k.filter(fit.k, now);
+      pose.dx = headF.dx.filter(fit.dx, now);
+      pose.dy = headF.dy.filter(fit.dy, now);
     }
     poseAt(pose.fov, M);
     cam.fov = pose.fov; cam.updateProjectionMatrix();
@@ -291,9 +306,10 @@ export async function createOverlay({ stage, S }) {
     mesh.matrix.copy(HM); mesh.matrixWorldNeedsUpdate = true;
   }
   function setHand(rig, lms, isRight) {
-    if (!rig.pts) rig.pts = lms.map(() => new THREE.Vector3());
-    const fresh = !rig.group.visible;
-    lms.forEach((p, i) => { T.set(p.x * W, (1 - p.y) * H, -p.z * W); if (fresh) rig.pts[i].copy(T); else rig.pts[i].lerp(T, 0.65); });
+    if (!rig.pts) { rig.pts = lms.map(() => new THREE.Vector3()); rig.filt = lms.map(() => new OneEuro3(1.4, 0.02, 0.5, 0.004)); }
+    const fresh = !rig.group.visible, now = performance.now();
+    if (fresh) for (const f of rig.filt) f.reset();
+    lms.forEach((p, i) => { T.set(p.x * W, (1 - p.y) * H, -p.z * W * 0.6); rig.pts[i].copy(rig.filt[i].filter(T, now)); });
     const P = rig.pts, sign = isRight ? 1 : -1;
     e1.subVectors(P[5], P[0]); e2.subVectors(P[17], P[0]);
     e3.crossVectors(e1, e2).normalize().multiplyScalar(sign * Math.sqrt(e1.length() * e2.length()));
@@ -412,7 +428,7 @@ export async function createOverlay({ stage, S }) {
   let ticks = 0, fps = 0, fpsAt = 0, dataAt = 0;
   function render(now, face, handList, rightSides, pointer, bodyPose) {
     const sg = shade.getContext("2d"); sg.clearRect(0, 0, W, H);
-    body.update(bodyPose && bodyPose.lms, W, H);
+    body.update(bodyPose && bodyPose.lms, W, H, now);
     const bodyOn = BODY_LAYER_KEYS.some(k => S[k]);
     if (bodyOn && bodyPose && bodyPose.mask) body.drawVeil(sg, bodyPose.mask, (1 - S.real) * 0.9, S.feather * 14);
     hands.forEach((rig, i) => {

@@ -4,6 +4,7 @@
 import * as THREE from "three";
 import meta from "./anatomy/body.json";
 import binUrl from "./anatomy/body.bin?url";
+import { OneEuro, OneEuro3 } from "./filter.js";
 
 export const BODY_META = meta;
 // layer -> [x-ray colour, solid colour, x-ray glow]
@@ -48,47 +49,74 @@ export async function createBody({ scene, material }) {
     meshes.push({ mesh, layer: m.layer, seg: m.seg, fixed: m.layer === "bodyOutline" });
   }
 
-  // smoothed tracker points in picture pixels (x right, y up, z toward the camera)
-  const P = {}, seen = {};
-  for (const i of POSE_IDS) P[i] = new THREE.Vector3();
-  const V = new THREE.Vector3(), e1 = new THREE.Vector3(), e2 = new THREE.Vector3(), e3 = new THREE.Vector3(), h1 = new THREE.Vector3();
+  // tracker points in picture pixels (x right, y up, z toward the camera), each with its own adaptive filter
+  const P = {}, vis = {}, filt = {};
+  for (const i of POSE_IDS) { P[i] = new THREE.Vector3(); vis[i] = 0; filt[i] = i === 23 || i === 24 ? new OneEuro3(0.3, 0.006) : new OneEuro3(0.55, 0.018); }
+  const scaleF = new OneEuro(0.4, 0), V = new THREE.Vector3(), e1 = new THREE.Vector3(), e2 = new THREE.Vector3(), e3 = new THREE.Vector3(), h1 = new THREE.Vector3();
   const front = new THREE.Vector3(), up = new THREE.Vector3(), X = new THREE.Vector3(), Y = new THREE.Vector3(), Z = new THREE.Vector3(), mid = new THREE.Vector3();
-  let found = false, torsoCenterX = 0, torsoHalf = 100;
+  const shMid = new THREE.Vector3(), down = new THREE.Vector3(), hipGuess = new THREE.Vector3();
+  let found = false, lostAt = 0, torsoCenterX = 0, torsoHalf = 100, pxPerCm = 1, deadRef = 0;
+  const fresh = {}; for (const i of POSE_IDS) fresh[i] = true;
+  // The tracker's body depth swings by a third of the picture on a still image, so it is left out: the body is
+  // placed facing the camera (turning still narrows it through the shoulder width) and nothing twists by itself.
 
-  function update(lms, W, H) {
-    if (!lms) { found = false; for (const s of Object.values(segs)) s.group.visible = false; return; }
+  function update(lms, W, H, now = performance.now()) {
+    if (!lms) {   // keep the last pose for a moment, so a single missed frame doesn't make it blink
+      if (found && now - lostAt > 400) { found = false; for (const s of Object.values(segs)) s.group.visible = false; for (const i of POSE_IDS) { filt[i].reset(); fresh[i] = true; } scaleF.reset(); deadRef = 0; }
+      if (!lostAt) lostAt = now;
+      return;
+    }
+    lostAt = 0;
     for (const i of POSE_IDS) {
       const p = lms[i]; if (!p) continue;
-      V.set(p.x * W, (1 - p.y) * H, -(p.z || 0) * W);
-      if (!found || !seen[i]) P[i].copy(V); else P[i].lerp(V, 0.6);
-      seen[i] = p.visibility === undefined ? 1 : p.visibility;
+      const v = p.visibility === undefined ? 1 : p.visibility;
+      vis[i] += (v - vis[i]) * 0.3;
+      if (found && v < 0.3) continue;   // a point the camera can't see keeps its last place instead of jumping
+      V.set(p.x * W, (1 - p.y) * H, 0);
+      filt[i].filter(V, now);
+      // dead zone: a point only moves once the tracker clearly says it moved, then follows smoothly
+      const dead = (fresh[i] ? 0 : 0.05) * deadRef, d = V.distanceTo(P[i]);
+      if (d > dead) P[i].lerp(V, (d - dead) / d);
+      fresh[i] = false;
     }
     found = true;
-    // torso: shoulder frame above, hip frame below, blended in the shader by height
-    const T = segs.torso;
-    mid.addVectors(P[23], P[24]).multiplyScalar(0.5);
+    if (window.__bodyPose) window.__bodyDrawn = POSE_IDS.map(i => [i, P[i].x, P[i].y]);   // test mode only
+    // one steady body scale (pixels per cm) from the shoulder width
     e1.subVectors(P[11], P[12]);
-    e2.addVectors(P[11], P[12]).multiplyScalar(0.5).sub(mid);
-    e3.crossVectors(e1, e2).normalize();
-    front.copy(e3); up.copy(e2).normalize();
-    e3.multiplyScalar(Math.sqrt(e1.length() * e2.length()));
-    h1.subVectors(P[23], P[24]).multiplyScalar(meta.torsoK);
+    pxPerCm = scaleF.filter(Math.hypot(e1.x, e1.y) / meta.shoulderW, now);
+    deadRef = pxPerCm * meta.shoulderW;   // shoulder width in pixels: the size of the dead zone scales with the body
+    shMid.addVectors(P[11], P[12]).multiplyScalar(0.5);
+    // hips out of view (sitting at a desk): place them below the shoulders from the body's proportions
+    down.set(e1.y, -e1.x, 0).normalize(); if (down.y > 0) down.negate();
+    hipGuess.copy(shMid).addScaledVector(down, meta.torsoH * pxPerCm);
+    const hipSeen = THREE.MathUtils.clamp((Math.min(vis[23], vis[24]) - 0.6) / 0.25, 0, 1);   // half-hidden hips wander: trust them only when clearly seen
+    mid.addVectors(P[23], P[24]).multiplyScalar(0.5).lerp(hipGuess, 1 - hipSeen);
+    // torso: shoulder frame above, hip frame below (same width: the pelvis follows the shoulders' scale), blended in the shader
+    const T = segs.torso;
+    e2.subVectors(shMid, mid);
+    front.set(0, 0, 1); up.copy(e2).normalize();
+    e3.copy(front).multiplyScalar(pxPerCm * Math.sqrt(meta.shoulderW * meta.torsoH));
+    h1.subVectors(P[23], P[24]);
+    if (hipSeen < 0.5 || h1.lengthSq() < 1) h1.copy(e1); else h1.setLength(e1.length());
     T.matrix.makeBasis(e1, e2, e3).setPosition(mid);
     T.hip.makeBasis(h1, e2, e3).setPosition(mid);
-    T.on = Math.min(seen[11], seen[12]) > 0.5;
+    T.on = showOrHide(T.on, Math.min(vis[11], vis[12]));
     torsoCenterX = mid.x; torsoHalf = e1.length() / 2;
     for (const s of Object.values(segs)) {
       if (s.kind !== "limb") continue;
       const a = P[s.a], b = P[s.b];
-      X.subVectors(b, a); const L = X.length() || 1e-6; X.divideScalar(L);
-      const ref = s.ref === "up" ? up : front;
-      Y.copy(ref).addScaledVector(X, -ref.dot(X));
-      if (Y.lengthSq() < 1e-6) Y.set(1, 0, 0).addScaledVector(X, -X.x);
-      Y.normalize(); Z.crossVectors(X, Y);
-      s.matrix.makeBasis(X.multiplyScalar(L), Y.multiplyScalar(L), Z.multiplyScalar(L)).setPosition(a);
-      s.on = Math.min(seen[s.a], seen[s.b]) > 0.4;
+      X.subVectors(b, a);
+      const ref = s.ref === "up" ? up : front, xh = X.clone().normalize();
+      Y.copy(ref).addScaledVector(xh, -ref.dot(xh));
+      if (Y.lengthSq() < 1e-6) Y.set(1, 0, 0).addScaledVector(xh, -xh.x);
+      Y.normalize(); Z.crossVectors(xh, Y);
+      const thick = s.len * pxPerCm;   // thickness from the steady body scale, not from the noisy length
+      s.matrix.makeBasis(X, Y.multiplyScalar(thick), Z.multiplyScalar(thick)).setPosition(a);
+      s.on = showOrHide(s.on, Math.min(vis[s.a], vis[s.b]));
     }
   }
+  // show a part once the camera clearly sees it, hide it only once it clearly doesn't (no flicker in between)
+  const showOrHide = (on, v) => on ? v > 0.4 : v > 0.65;
 
   function apply(S, gainFor) {
     const solid = S.style === "solid";
@@ -138,12 +166,14 @@ export async function createBody({ scene, material }) {
 
   // a dark veil over the real body from the tracker's person mask, so the anatomy reads clearly
   const maskCanvas = document.createElement("canvas");
+  let steady = null;   // the mask averaged over the last few frames, so its edge doesn't shimmer
   function drawVeil(g, mask, alpha, blurPx) {
     if (!mask || alpha <= 0.01) return;
     const { data, width, height } = mask;
-    if (maskCanvas.width !== width || maskCanvas.height !== height) { maskCanvas.width = width; maskCanvas.height = height; }
+    if (maskCanvas.width !== width || maskCanvas.height !== height) { maskCanvas.width = width; maskCanvas.height = height; steady = null; }
+    if (!steady) steady = Float32Array.from(data); else for (let i = 0; i < data.length; i++) steady[i] += (data[i] - steady[i]) * 0.35;
     const mg = maskCanvas.getContext("2d"), img = mg.createImageData(width, height);
-    for (let i = 0; i < data.length; i++) { const o = 4 * i; img.data[o] = 4; img.data[o + 1] = 7; img.data[o + 2] = 13; img.data[o + 3] = Math.round(Math.min(1, data[i] * 1.2) * 255); }
+    for (let i = 0; i < steady.length; i++) { const o = 4 * i; img.data[o] = 4; img.data[o + 1] = 7; img.data[o + 2] = 13; img.data[o + 3] = Math.round(Math.min(1, steady[i] * 1.2) * 255); }
     mg.putImageData(img, 0, 0);
     g.save(); g.filter = blurPx > 0.5 ? `blur(${blurPx.toFixed(1)}px)` : "none"; g.globalAlpha = alpha;
     g.drawImage(maskCanvas, 0, 0, g.canvas.width, g.canvas.height);
