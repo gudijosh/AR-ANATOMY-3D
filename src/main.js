@@ -15,6 +15,22 @@ const MODEL_BASE = "https://storage.googleapis.com/mediapipe-models/";
 const FACE_MODEL = MODEL_BASE + "face_landmarker/face_landmarker/float16/1/face_landmarker.task";
 const HAND_MODEL = MODEL_BASE + "hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
 const DEMO = location.hash === "#demo";   // a pretend head and hand, no camera needed
+// test mode: ?photo=<same-site image>&crop=x,y,w,h feeds a still picture to the trackers instead of the camera
+// only pictures from this same site are accepted, so a shared link cannot make the page load someone else's image
+const PHOTO = (() => {
+  const raw = new URLSearchParams(location.search).get("photo");
+  if (!raw) return null;
+  try { const u = new URL(raw, location.href); return u.origin === location.origin ? u.href : null; } catch { return null; }
+})();
+
+async function photoStream(url, crop) {
+  const img = new Image(); img.src = url; await img.decode();
+  const [cx, cy, cw, ch] = crop && crop.length === 4 ? crop : [0, 0, img.naturalWidth, img.naturalHeight];
+  const c = document.createElement("canvas"); c.width = 960; c.height = Math.round(960 * ch / cw);
+  const g = c.getContext("2d"), draw = () => g.drawImage(img, cx, cy, cw, ch, 0, 0, c.width, c.height);
+  draw(); setInterval(draw, 40);
+  return c.captureStream(25);
+}
 
 // ------------------------------------------------------------ settings
 const DEFAULTS = {
@@ -167,14 +183,16 @@ $("start").addEventListener("click", async () => {
   $("start").disabled = true;
   let step = "step.camera";
   try {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia)
+    if (!PHOTO && (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia))
       throw new Error(t("err.noCamera"));
     setStatus("st.asking");
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false,
-    });
+    const params = new URLSearchParams(location.search);
+    const stream = PHOTO ? await photoStream(PHOTO, (params.get("crop") || "").split(",").filter(Boolean).map(Number))
+      : await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false,
+      });
     video.srcObject = stream;
-    await video.play();
+    await Promise.race([video.play(), new Promise(r => setTimeout(r, 2500))]);   // some browsers never settle play() for a still stream
     if (video.videoWidth && video.videoHeight) stage.style.setProperty("--ar", (video.videoWidth / video.videoHeight).toFixed(4));
     $("intro").hidden = true;
     step = "step.engine";
@@ -195,4 +213,13 @@ $("start").addEventListener("click", async () => {
   }
 });
 
+if (PHOTO) {   // optional preview settings, as in the demo
+  const params = new URLSearchParams(location.search), preset = params.get("preset");
+  if (preset) document.querySelector(`[data-preset="${preset}"]`)?.click();
+  if (params.get("style")) { S.style = params.get("style"); showSettings(); }
+  if (params.has("labels")) { S.labels = true; showSettings(); }
+  if (params.get("real")) { S.real = +params.get("real"); showSettings(); }
+  if (params.has("data")) { S.showdata = true; showSettings(); }
+  $("start").click();
+}
 if (DEMO) loadOverlay().then(runDemo).catch(e => setStatus("st.demoFailed", "bad", { msg: e.message }));
