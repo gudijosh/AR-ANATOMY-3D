@@ -1,6 +1,6 @@
 // The 3D overlay: anatomy pinned to the tracked head, bones on tracked hands, labels and the data read-out.
 import * as THREE from "three";
-import { buildAnatomy, LABELS, JAW_PIVOT } from "./anatomy.js";
+import { loadAnatomy, LABELS, JAW_PIVOT, HEAD_MIDDLE } from "./anatomy.js";
 import { t, anatomyName } from "./i18n.js";
 
 // Points of the face tracker's own reference face (cm) used to pin the model to the picture.
@@ -11,7 +11,6 @@ export const FIT_POINTS = {
 };
 const FIT_IDS = Object.keys(FIT_POINTS).map(Number);
 const FINGER = [[1, 2], [2, 3], [3, 4], [5, 6], [6, 7], [7, 8], [9, 10], [10, 11], [11, 12], [13, 14], [14, 15], [15, 16], [17, 18], [18, 19], [19, 20]];
-const PALM = [5, 9, 13, 17];
 export const LAYERS = ["skull", "brain", "muscles", "eyes", "outline", "hands"];
 
 const VERT = /* glsl */`
@@ -55,10 +54,10 @@ void main() {
 }`;
 
 const LABEL_INK = { skull: "#d9f0ff", brain: "#ffc2d6", muscles: "#ffb3aa", eyes: "#fff3a8", hands: "#d9f0ff" };
-const HEAD_MIDDLE = [0, 3.2, -4.8];
-const GLOW = { outline: 0.55, muscles: 0.5, cranium: 0.8, jaw: 0.8, cerebrum: 0.45, hindbrain: 0.6, eyes: 0.9 };
+const GLOW = { outline: 0.55, muscles: 0.55, cranium: 0.7, jaw: 0.8, cerebrum: 0.34, hindbrain: 0.55, eyes: 0.8 };
 
-export function createOverlay({ stage, S }) {
+export async function createOverlay({ stage, S }) {
+  const shape = await loadAnatomy();
   const $ = id => document.getElementById(id);
   const glCanvas = $("gl"), shade = $("shade"), hud = $("hud");
   let W = 640, H = 480, sized = false;
@@ -71,7 +70,6 @@ export function createOverlay({ stage, S }) {
   const flat = new THREE.OrthographicCamera(0, W, H, 0, -5000, 5000);
   let baseProj = cam.projectionMatrix.clone();
 
-  const shape = buildAnatomy();
   function material(tint, body, kind) {
     return new THREE.ShaderMaterial({
       uniforms: {
@@ -109,9 +107,9 @@ export function createOverlay({ stage, S }) {
       const m = new THREE.Mesh(geo, material(0xd9f0ff, 0xe9e2cf, 0));
       m.material.uniforms.uFlatView.value = 1; m.matrixAutoUpdate = false; m.frustumCulled = false; group.add(m); return m;
     };
-    return { group, carpals: mk(shape.carpals), palm: PALM.map(() => mk(shape.bone)), fingers: FINGER.map(() => mk(shape.bone)), pts: null };
+    return { group, palm: mk(shape.hand_palm), fingers: FINGER.map(([a, b]) => mk(shape[`hand_b_${a}_${b}`])), pts: null };
   });
-  const handMeshes = r => [r.carpals, ...r.palm, ...r.fingers];
+  const handMeshes = r => [r.palm, ...r.fingers];
 
   function forEachMaterial(fn) {
     for (const k in parts) fn(parts[k].mesh.material, parts[k]);
@@ -240,9 +238,8 @@ export function createOverlay({ stage, S }) {
     const P = rig.pts, sign = isRight ? 1 : -1;
     e1.subVectors(P[5], P[0]); e2.subVectors(P[17], P[0]);
     e3.crossVectors(e1, e2).normalize().multiplyScalar(sign * Math.sqrt(e1.length() * e2.length()));
-    rig.carpals.matrix.makeBasis(e1, e2, e3).setPosition(P[0]); rig.carpals.matrixWorldNeedsUpdate = true;
+    rig.palm.matrix.makeBasis(e1, e2, e3).setPosition(P[0]); rig.palm.matrixWorldNeedsUpdate = true;   // wrist bones and metacarpals
     C.subVectors(P[17], P[5]).normalize();
-    PALM.forEach((k, i) => { S0.lerpVectors(P[0], P[k], 0.3); placeBone(rig.palm[i], S0, P[k], C, sign, 1); });
     FINGER.forEach(([a, b], i) => placeBone(rig.fingers[i], P[a], P[b], C, sign, b % 4 === 0 ? 0.8 : 1));
     rig.group.visible = true;
   }

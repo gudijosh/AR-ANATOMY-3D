@@ -1,5 +1,6 @@
 import "./style.css";
 import { t, translatePage, setLang, onLangChange } from "./i18n.js";
+import anatomyMeta from "./anatomy/anatomy.json";
 // Controls, settings and start-up. The 3D overlay and tracking load only when the camera starts.
 const $ = id => document.getElementById(id);
 const statusEl = $("status"), video = $("video"), stage = $("stage");
@@ -72,7 +73,7 @@ stage.addEventListener("pointerleave", () => { pointer = null; });
 
 async function loadOverlay() {
   const { createOverlay } = await import("./overlay.js");
-  overlay = createOverlay({ stage, S });
+  overlay = await createOverlay({ stage, S });
 }
 
 // ------------------------------------------------------------ tracking
@@ -133,9 +134,8 @@ function runLive() {
 
 // ------------------------------------------------------------ demo scene
 // a right hand, palm to the camera, fingers up (cm, x right, y up)
-const DEMO_HAND = [[0, 0], [1.5, 1.3], [2.7, 2.7], [3.5, 4.1], [4.1, 5.3], [2.0, 8.0], [2.3, 11.0], [2.4, 13.0], [2.5, 14.6],
-  [0.3, 8.3], [0.3, 11.6], [0.3, 13.8], [0.3, 15.5], [-1.4, 7.9], [-1.6, 10.9], [-1.7, 12.9], [-1.8, 14.4],
-  [-2.9, 7.2], [-3.3, 9.4], [-3.5, 10.8], [-3.7, 12.0]];
+// the dataset's own right hand, turned fingers-up, palm to the camera (cm from the wrist)
+const DEMO_HAND = anatomyMeta.hand.map(([x, y, z]) => [-x, -y, z]);
 function runDemo() {
   $("intro").hidden = true;
   setStatus("st.demo", "ok");
@@ -153,9 +153,9 @@ function runDemo() {
     const f = overlay.demoFace(time);
     overlay.setHead(f.matrix, f.lms, 0.5 + 0.5 * Math.sin(time * 1.3));
     const ky = 0.021, kx = ky * H / W, curl = 0.5 + 0.5 * Math.sin(time * 0.9);
-    const pts = DEMO_HAND.map(([x, y], i) => {
+    const pts = DEMO_HAND.map(([x, y, z], i) => {
       const joint = i % 4 === 0 && i ? 2 : i % 4 === 3 ? 1.2 : i % 4 === 2 ? 0.6 : 0;   // fingertips bend most
-      return { x: 0.82 - x * kx, y: 0.86 - (y - joint * curl * 0.5) * ky, z: -joint * curl * 0.006 };
+      return { x: 0.82 - x * kx, y: 0.86 - (y - joint * curl * 0.5) * ky, z: -(z + joint * curl * 0.6) * ky * 0.5 };
     });
     overlay.render(now, f.lms, [pts], [true], pointer);
   };
