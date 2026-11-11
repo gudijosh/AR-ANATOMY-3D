@@ -15,8 +15,10 @@ export const LAYERS = ["skull", "brain", "muscles", "eyes", "outline", "hands"];
 
 const VERT = /* glsl */`
 uniform mat4 uLocal; uniform float uFlatView;
-varying vec3 vNormal; varying vec3 vToEye; varying vec3 vHead;
+attribute vec2 aMuscle;
+varying vec3 vNormal; varying vec3 vToEye; varying vec3 vHead; varying vec2 vMuscle;
 void main() {
+  vMuscle = aMuscle;
   vHead = (uLocal * vec4(position, 1.0)).xyz;
   vec4 eye = modelViewMatrix * vec4(position, 1.0);
   vNormal = normalize(normalMatrix * normal);
@@ -25,9 +27,9 @@ void main() {
 }`;
 const FRAG = /* glsl */`
 uniform vec3 uTint; uniform vec3 uBody;
-uniform float uKind, uAlpha, uGain, uNeck, uEdge, uCutOn, uCutSoft;
+uniform float uKind, uAlpha, uGain, uNeck, uEdge, uCutOn, uCutSoft, uFibers;
 uniform vec4 uPlane;
-varying vec3 vNormal; varying vec3 vToEye; varying vec3 vHead;
+varying vec3 vNormal; varying vec3 vToEye; varying vec3 vHead; varying vec2 vMuscle;
 void main() {
   float keep = 1.0;
   if (uCutOn > 0.5) {
@@ -39,16 +41,28 @@ void main() {
   float facing = abs(dot(n, normalize(vToEye)));
   if (uEdge > 0.001) keep *= smoothstep(0.0, uEdge, facing);
   float neck = uNeck > 0.5 ? smoothstep(-12.4, -9.2, vHead.y) : 1.0;
+  // muscles: fibre stripes across vMuscle.x (cm), paler tendon where the slab thins out (vMuscle.y -> 0)
+  float fib = 1.0, tendon = 0.0;
+  if (uFibers > 0.5) {
+    fib = 0.76 + 0.24 * smoothstep(0.1, 0.9, 0.5 + 0.5 * sin(vMuscle.x * 17.0));
+    tendon = smoothstep(0.22, 0.0, vMuscle.y);
+  }
   if (uKind > 1.5) {
     gl_FragColor = vec4(uTint, uAlpha * neck * keep);
   } else if (uKind > 0.5) {
     vec3 fn = gl_FrontFacing ? n : -n;
     float light = max(dot(fn, normalize(vec3(0.35, 0.55, 0.76))), 0.0);
     float rim = pow(1.0 - facing, 2.5);
-    gl_FragColor = vec4(uBody * (0.28 + 0.78 * light) * uGain + vec3(0.25) * rim, uAlpha * keep);
+    vec3 body = mix(uBody * fib, vec3(0.80, 0.70, 0.62), tendon * 0.45);
+    vec3 col = body * (0.28 + 0.78 * light) * uGain + vec3(0.25) * rim * (1.0 - 0.5 * uFibers);
+    if (uFibers > 0.5) {   // a soft wet sheen
+      vec3 h = normalize(normalize(vec3(0.35, 0.55, 0.76)) + normalize(vToEye));
+      col += vec3(0.18) * pow(max(dot(fn, h), 0.0), 28.0);
+    }
+    gl_FragColor = vec4(col, uAlpha * keep * neck);
   } else {
     float rim = pow(1.0 - facing, 2.1);
-    float a = clamp((0.035 + 0.95 * rim) * uGain * uAlpha * neck, 0.0, 1.0);
+    float a = clamp((0.035 + 0.95 * rim) * uGain * uAlpha * neck * fib, 0.0, 1.0);
     gl_FragColor = vec4(uTint, a * keep);
   }
 }`;
@@ -68,7 +82,8 @@ export async function createOverlay({ stage, S }) {
   const headScene = new THREE.Scene(), handScene = new THREE.Scene();
   const cam = new THREE.PerspectiveCamera(63, W / H, 1, 10000);   // the face tracker assumes a 63° tall view
   const flat = new THREE.OrthographicCamera(0, W, H, 0, -5000, 5000);
-  let baseProj = cam.projectionMatrix.clone();
+  const trackerCam = new THREE.PerspectiveCamera(63, W / H, 1, 10000);   // what the tracker assumes (the demo uses it)
+  let baseProj = trackerCam.projectionMatrix.clone();
 
   function material(tint, body, kind) {
     return new THREE.ShaderMaterial({
@@ -76,7 +91,7 @@ export async function createOverlay({ stage, S }) {
         uTint: { value: new THREE.Color(tint) }, uBody: { value: new THREE.Color(body) }, uKind: { value: kind },
         uAlpha: { value: 1 }, uGain: { value: 1 }, uNeck: { value: 0 }, uEdge: { value: 0 }, uCutOn: { value: 0 },
         uCutSoft: { value: 0 }, uPlane: { value: new THREE.Vector4(1, 0, 0, 0) }, uLocal: { value: new THREE.Matrix4() },
-        uFlatView: { value: 0 },
+        uFlatView: { value: 0 }, uFibers: { value: 0 },
       },
       vertexShader: VERT, fragmentShader: FRAG, side: THREE.DoubleSide, transparent: true,
       depthTest: false, depthWrite: false, blending: kind === 2 ? THREE.NormalBlending : THREE.AdditiveBlending,
@@ -94,7 +109,8 @@ export async function createOverlay({ stage, S }) {
   }
   part("veil", shape.skin, "veil", 0x04070d, 0x04070d, -10, 2, head, true).material.uniforms.uNeck.value = 1;
   part("outline", shape.skin, "outline", 0x6fb6ff, 0x6fb6ff, 1, 0, head, true).material.uniforms.uNeck.value = 1;
-  part("muscles", shape.muscles, "muscles", 0xff6b5e, 0xb5453c, 2);
+  const muscleMat = part("muscles", shape.muscles, "muscles", 0xff6b5e, 0xa8382f, 2).material;
+  muscleMat.uniforms.uFibers.value = 1; muscleMat.uniforms.uNeck.value = 1;
   part("cranium", shape.cranium, "skull", 0xbfe3ff, 0xe9e2cf, 3);
   part("jaw", shape.jaw, "skull", 0xbfe3ff, 0xe9e2cf, 3, 0, jawHinge).position.fromArray(JAW_PIVOT).multiplyScalar(-1);
   part("eyes", shape.eyes, "eyes", 0xfff3a8, 0xf4f4ee, 4);
@@ -132,7 +148,8 @@ export async function createOverlay({ stage, S }) {
     sized = true; W = w; H = h;
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.setSize(W, H, false);
-    cam.aspect = W / H; cam.updateProjectionMatrix(); baseProj = cam.projectionMatrix.clone();
+    cam.aspect = W / H; cam.updateProjectionMatrix();
+    trackerCam.aspect = W / H; trackerCam.updateProjectionMatrix(); baseProj = trackerCam.projectionMatrix.clone();
     flat.right = W; flat.top = H; flat.updateProjectionMatrix();
     for (const c of [shade, hud]) { c.width = W; c.height = H; }
   }
@@ -144,6 +161,40 @@ export async function createOverlay({ stage, S }) {
   const M = new THREE.Matrix4(), P3 = new THREE.Vector3(), Q = new THREE.Quaternion(), Sz = new THREE.Vector3(), T = new THREE.Vector3();
   const fitM = new THREE.Matrix4(), screenFix = new THREE.Matrix4(), jawM = new THREE.Matrix4();
 
+  const TRACKER_FOV = 63, D2R = Math.PI / 180, FP = new THREE.Vector3(), probe = new THREE.PerspectiveCamera(63, 1, 1, 10000);
+  const fovPos = new THREE.Vector3(), fitMat = new THREE.Matrix4();
+  const distanceFactor = fov => Math.tan(TRACKER_FOV / 2 * D2R) / Math.tan(fov / 2 * D2R);
+  // the smoothed pose, pushed further away (only its depth changes) so that with a view angle of fov degrees
+  // it lands on the same spot of the screen at the same size
+  function poseAt(fov, out) {
+    return out.compose(fovPos.set(pose.pos.x, pose.pos.y, pose.pos.z * distanceFactor(fov)), pose.rot, pose.size);
+  }
+  // best scale k and shift (dx, dy in screen units) mapping the projected reference points onto the tracked ones
+  function fitScreen(fov, lms) {
+    probe.fov = fov; probe.aspect = W / H; probe.updateProjectionMatrix();
+    poseAt(fov, fitMat);
+    const a = [], b = [];
+    for (const id of FIT_IDS) {
+      const q = lms[id]; if (!q) continue;
+      FP.fromArray(FIT_POINTS[id]).applyMatrix4(fitMat).applyMatrix4(probe.projectionMatrix);
+      a.push(FP.x * W / 2, FP.y * H / 2); b.push((q.x * 2 - 1) * W / 2, (1 - q.y * 2) * H / 2);   // in pixels
+    }
+    const n = a.length / 2;
+    if (n < 3) return null;
+    let ax = 0, ay = 0, bx = 0, by = 0;
+    for (let i = 0; i < n; i++) { ax += a[2 * i]; ay += a[2 * i + 1]; bx += b[2 * i]; by += b[2 * i + 1]; }
+    ax /= n; ay /= n; bx /= n; by /= n;
+    let top = 0, bottom = 0;
+    for (let i = 0; i < n; i++) {
+      const px = a[2 * i] - ax, py = a[2 * i + 1] - ay;
+      top += px * (b[2 * i] - bx) + py * (b[2 * i + 1] - by); bottom += px * px + py * py;
+    }
+    const k = Math.min(1.6, Math.max(0.6, bottom > 1e-9 ? top / bottom : 1));
+    let err = 0;
+    for (let i = 0; i < n; i++) err += Math.hypot(k * (a[2 * i] - ax) + bx - b[2 * i], k * (a[2 * i + 1] - ay) + by - b[2 * i + 1]);
+    return { k, dx: (bx - k * ax) / (W / 2), dy: (by - k * ay) / (H / 2), err };
+  }
+
   function setHead(matrix, lms, jawOpen) {
     M.fromArray(matrix);
     const e = M.elements;   // accept a row-major matrix too
@@ -153,32 +204,28 @@ export async function createOverlay({ stage, S }) {
     else { pose.pos.lerp(P3, 0.6); pose.rot.slerp(Q, 0.55); pose.size.lerp(Sz, 0.5); }
     pose.found = true;
     pose.jaw += (jawOpen - pose.jaw) * 0.6;
-    M.compose(pose.pos, pose.rot, pose.size);
-
-    // Line the model up with the face in the picture: best scale and shift between projected and seen points.
-    const a = [], b = [];
-    for (const id of FIT_IDS) {
-      const q = lms[id]; if (!q) continue;
-      T.fromArray(FIT_POINTS[id]).applyMatrix4(M).applyMatrix4(baseProj);
-      a.push(T.x, T.y); b.push(q.x * 2 - 1, 1 - q.y * 2);
+    // The tracker assumes a wide 63° camera; real webcams (and photos) see a narrower view, so the head really
+    // sits further away and looks flatter. Find the view angle whose perspective lines up the reference points
+    // best (the cheek sides and the nose tip sit at different depths), then the best scale and shift.
+    const errAt = f => { const r = fitScreen(f, lms); return r ? r.err : 1e9; };
+    let lo = 8, hi = 75;
+    for (let i = 0; i < 14; i++) {   // golden-section search
+      const m1 = hi - (hi - lo) * 0.618, m2 = lo + (hi - lo) * 0.618;
+      if (errAt(m1) < errAt(m2)) hi = m2; else lo = m1;
     }
-    const n = a.length / 2;
-    if (n > 1) {
-      let ax = 0, ay = 0, bx = 0, by = 0;
-      for (let i = 0; i < n; i++) { ax += a[2 * i]; ay += a[2 * i + 1]; bx += b[2 * i]; by += b[2 * i + 1]; }
-      ax /= n; ay /= n; bx /= n; by /= n;
-      let top = 0, bottom = 0;
-      for (let i = 0; i < n; i++) {
-        const px = a[2 * i] - ax, py = a[2 * i + 1] - ay;
-        top += px * (b[2 * i] - bx) + py * (b[2 * i + 1] - by); bottom += px * px + py * py;
-      }
-      const k = Math.min(1.6, Math.max(0.6, bottom > 1e-9 ? top / bottom : 1));
-      pose.k += (k - pose.k) * 0.5;
-      pose.dx += (bx - pose.k * ax - pose.dx) * 0.7;
-      pose.dy += (by - pose.k * ay - pose.dy) * 0.7;
+    const bestFov = (lo + hi) / 2;
+    pose.fov = pose.fitSet ? pose.fov + (bestFov - pose.fov) * 0.15 : bestFov;
+    const fit = fitScreen(pose.fov, lms);
+    if (fit) {
+      if (!pose.fitSet) { pose.k = fit.k; pose.dx = fit.dx; pose.dy = fit.dy; pose.fitSet = true; }
+      pose.k += (fit.k - pose.k) * 0.5;
+      pose.dx += (fit.dx - pose.dx) * 0.7;
+      pose.dy += (fit.dy - pose.dy) * 0.7;
     }
+    poseAt(pose.fov, M);
+    cam.fov = pose.fov; cam.updateProjectionMatrix();
     screenFix.set(pose.k, 0, 0, pose.dx, 0, pose.k, 0, pose.dy, 0, 0, 1, 0, 0, 0, 0, 1);
-    cam.projectionMatrix.copy(baseProj).premultiply(screenFix);
+    cam.projectionMatrix.premultiply(screenFix);
     cam.projectionMatrixInverse.copy(cam.projectionMatrix).invert();
 
     // the person's own adjustments (their left is +x, so the flipped view reverses it)
@@ -188,7 +235,7 @@ export async function createOverlay({ stage, S }) {
     head.visible = true;
     jawHinge.rotation.x = Math.min(1, Math.max(0, pose.jaw)) * 0.36;
   }
-  function loseHead() { pose.found = false; head.visible = false; }
+  function loseHead() { pose.found = false; pose.fitSet = false; head.visible = false; }
 
   const cut = { on: 0, x: 1, y: 0, w: 0 };
   function applyLayers() {
@@ -401,7 +448,7 @@ export async function createOverlay({ stage, S }) {
     if (pose.found) {
       const eu = new THREE.Euler().setFromQuaternion(pose.rot, "YXZ"), deg = r => Math.round(r * 57.2958) + "°";
       rows.push([t("d.face"), t("d.tracked", { n: face ? face.filter(Boolean).length : 0 })],
-        [t("d.distance"), t("d.cm", { n: (-pose.pos.z).toFixed(0) })],
+        [t("d.distance"), t("d.cm", { n: (-pose.pos.z * distanceFactor(pose.fov || TRACKER_FOV)).toFixed(0) })],
         [t("d.angles"), `${deg(eu.y)} / ${deg(eu.x)} / ${deg(eu.z)}`],
         [t("d.jaw"), pose.jaw.toFixed(2)],
         [t("d.fit"), t("d.fitValue", { k: pose.k.toFixed(3), x: pose.dx.toFixed(3), y: pose.dy.toFixed(3) })]);

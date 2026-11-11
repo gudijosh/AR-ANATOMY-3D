@@ -21,6 +21,11 @@ export async function loadAnatomy() {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
     geo.setIndex(new THREE.BufferAttribute(new Uint16Array(buf, m.offI, m.ni).slice(), 1));
+    if (m.offA !== undefined) {   // muscles: [coordinate across the fibres in cm, thickness weight 0..1]
+      const qa = new Uint16Array(buf, m.offA, m.nv * 2), a = new Float32Array(m.nv * 2);
+      for (let i = 0; i < qa.length; i++) a[i] = m.aMin[i % 2] + qa[i] / 65535 * m.aSize[i % 2];
+      geo.setAttribute("aMuscle", new THREE.BufferAttribute(a, 2));
+    }
     geo.computeVertexNormals();
     out[m.name] = geo;
   }

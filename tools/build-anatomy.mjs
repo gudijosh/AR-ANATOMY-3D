@@ -223,8 +223,24 @@ function simplify(m, triangles) {
 }
 
 // ------------------------------------------------------------------ muscles, modelled on the real skull and skin
-// A muscle is a lens-shaped slab over part of a surface: weight w(p) in 0..1 says how much of it is there.
-function slab(m, weight, { lift = 0, thick = 0.5, inward = false, facing = null }) {
+// A muscle is a lens-shaped slab over part of a surface: weight w(p) in 0..1 says how much of it is there, and
+// fiber(p) gives a coordinate across its fibres (cm), so the page can draw fibre stripes along the right direction.
+// Each vertex carries [fiber, weight]; low weight (the thin rim) is drawn paler, like tendon.
+function subdivide(m) {   // split every triangle into four, sharing edge midpoints
+  const pos = Array.from(m.pos), mid = new Map(), idx = [];
+  const half = (a, b) => {
+    const key = a < b ? a * 1e7 + b : b * 1e7 + a;
+    let k = mid.get(key);
+    if (k === undefined) { k = pos.length / 3; mid.set(key, k); for (let c = 0; c < 3; c++) pos.push((m.pos[3 * a + c] + m.pos[3 * b + c]) / 2); }
+    return k;
+  };
+  for (let i = 0; i < m.idx.length; i += 3) {
+    const a = m.idx[i], b = m.idx[i + 1], c = m.idx[i + 2], ab = half(a, b), bc = half(b, c), ca = half(c, a);
+    idx.push(a, ab, ca, ab, b, bc, ca, bc, c, ab, bc, ca);
+  }
+  return { pos: Float64Array.from(pos), idx: Uint32Array.from(idx) };
+}
+function slab(m, weight, { lift = 0, thick = 0.5, inward = false, facing = null, fiber = p => p[0] }) {
   const n = normals(m), nv = m.pos.length / 3, w = new Float64Array(nv);
   let side = 0; for (let i = 0; i < nv; i++) side += dot([n[3 * i], n[3 * i + 1], n[3 * i + 2]], sub(vert(m, i), HC));
   if (side < 0) for (let i = 0; i < n.length; i++) n[i] = -n[i];   // make normals point out of the head
@@ -232,38 +248,38 @@ function slab(m, weight, { lift = 0, thick = 0.5, inward = false, facing = null 
     const p = vert(m, i), nn = [n[3 * i], n[3 * i + 1], n[3 * i + 2]];
     w[i] = clamp(weight(p, nn), 0, 1) * (facing ? clamp(facing(p, nn), 0, 1) : 1);
   }
-  // soften the outline: average each weight with its neighbours a few times
-  for (let pass = 0; pass < 3; pass++) {
+  for (let pass = 0; pass < 2; pass++) {   // soften the outline a little
     const sum = new Float64Array(nv), cnt = new Float64Array(nv);
     for (let i = 0; i < m.idx.length; i += 3) for (let k = 0; k < 3; k++) {
       const v = m.idx[i + k], a = m.idx[i + (k + 1) % 3], b = m.idx[i + (k + 2) % 3];
       sum[v] += w[a] + w[b]; cnt[v] += 2;
     }
     for (let i = 0; i < nv; i++) if (cnt[i]) w[i] = 0.5 * w[i] + 0.5 * sum[i] / cnt[i];
-    for (let i = 0; i < nv; i++) if (w[i] < 0.02) w[i] = 0;
+    for (let i = 0; i < nv; i++) if (w[i] < 0.03) w[i] = 0;
   }
   const tris = [];
   for (let i = 0; i < m.idx.length; i += 3) {
     const a = m.idx[i], b = m.idx[i + 1], c = m.idx[i + 2];
-    if (w[a] > 0.01 || w[b] > 0.01 || w[c] > 0.01) tris.push(a, b, c);   // rim corners have weight 0, which closes the slab
+    if (w[a] > 0 || w[b] > 0 || w[c] > 0) tris.push(a, b, c);   // rim corners have weight 0, which closes the slab
   }
-  const used = new Map(), pos = [], idx = [];
+  const used = new Map(), pos = [], attr = [], idx = [];
   const sgn = inward ? -1 : 1;
-  const put = (v, side) => {
-    const key = v * 2 + side;
+  const put = (v, top) => {
+    const key = v * 2 + top;
     if (used.has(key)) return used.get(key);
     const p = vert(m, v), nn = [n[3 * v], n[3 * v + 1], n[3 * v + 2]];
     const base = add(p, mul(nn, sgn * lift));
-    const off = side ? thick * w[v] : -thick * w[v] * (inward ? 1 : 0.15);
+    const shape = Math.sqrt(w[v]);   // rounded profile: full thickness soon after the rim
+    const off = top ? thick * shape : -thick * shape * (inward ? 1 : 0.15);
     const q = add(base, mul(nn, off));
-    const k = pos.length / 3; pos.push(q[0], q[1], q[2]); used.set(key, k); return k;
+    const k = pos.length / 3; pos.push(q[0], q[1], q[2]); attr.push(fiber(p), w[v]); used.set(key, k); return k;
   };
   for (let i = 0; i < tris.length; i += 3) {
     const [a, b, c] = [tris[i], tris[i + 1], tris[i + 2]];
     idx.push(put(a, 1), put(b, 1), put(c, 1));
     idx.push(put(a, 0), put(c, 0), put(b, 0));
   }
-  return { mesh: { pos: Float64Array.from(pos), idx: Uint32Array.from(idx) }, peak: peakOf(m, w, n, sgn * lift + thick) };
+  return { mesh: { pos: Float64Array.from(pos), idx: Uint32Array.from(idx), attr: Float64Array.from(attr) }, peak: peakOf(m, w, n, sgn * lift + thick) };
 }
 function peakOf(m, w, n, out) {
   let bi = -1; for (let i = 0; i < w.length; i++) if (bi < 0 || w[i] > w[bi]) bi = i;
@@ -271,37 +287,55 @@ function peakOf(m, w, n, out) {
 }
 const ell = (p, c, rx, ry) => Math.hypot((p[0] - c[0]) / rx, (p[1] - c[1]) / ry);
 const segDist = (p, a, b) => { const ab = [b[0] - a[0], b[1] - a[1]], ap = [p[0] - a[0], p[1] - a[1]]; const t = clamp((ap[0] * ab[0] + ap[1] * ab[1]) / (ab[0] ** 2 + ab[1] ** 2), 0, 1); return Math.hypot(ap[0] - t * ab[0], ap[1] - t * ab[1]); };
+const band = (p, a, b) => { const d = norm([b[0] - a[0], b[1] - a[1], 0]); return (p[0] - a[0]) * -d[1] + (p[1] - a[1]) * d[0]; };   // signed, across a 2D band
+const seg3 = (p, a, b) => { const ab = sub(b, a), t = clamp(dot(sub(p, a), ab) / dot(ab, ab), 0, 1); return len(sub(p, add(a, mul(ab, t)))); };
 const bump = (d, r) => smooth(1, 0.35, d / r);   // 1 inside, fading to 0 at r
+function mergeAttr(list) {
+  const m = merge(list); const attr = new Float64Array(m.pos.length / 3 * 2); let o = 0;
+  for (const x of list) { attr.set(x.attr, o); o += x.attr.length; }
+  m.attr = attr; return m;
+}
 
 console.log("modelling muscles…");
-const craniumMid = simplify(cranium, 60000), mandibleMid = simplify(mandible, 8000), skinMid = simplify(skin, 60000);
+const craniumMid = subdivide(simplify(cranium, 50000)), mandibleMid = subdivide(subdivide(simplify(mandible, 6000)));
+const skinFine = subdivide(subdivide(simplify(skin, 30000)));
 const HC = [0, 3.0, -4.6];   // middle of the head
 const outward = (p, n) => smooth(0.1, 0.4, dot(n, norm(sub(p, HC))));
 const front = (p, n) => smooth(0.0, 0.35, n[2]) * smooth(-0.5, 0.8, p[2]);
 const muscleParts = [], muscleLabels = {};
 const addMuscle = (name, r) => { muscleParts.push(r.mesh); (muscleLabels[name] ||= []).push(r.peak.map(v => +v.toFixed(2))); };
 for (const s of [1, -1]) {
-  addMuscle("Temporalis", slab(craniumMid, p => s * p[0] > 3.5 ? bump(Math.hypot((p[1] - 4.2) / 4.6, (p[2] + 4.0) / 5.6), 1) * smooth(-1.5, 0.5, p[1]) : 0,
-    { lift: 0.05, thick: 0.9, facing: (p, n) => smooth(0.15, 0.45, s * n[0]) * outward(p, n) }));
-  addMuscle("Masseter", slab(mandibleMid, p => s * p[0] > 3.0 ? bump(Math.hypot((p[1] + 3.6) / 3.2, (p[2] + 1.6) / 2.4), 1) : 0,
-    { lift: 0.05, thick: 0.85, facing: (p, n) => smooth(0.1, 0.4, s * n[0]) }));
-  addMuscle("Orbicularis oculi", slab(skinMid, p => { const d = ell(p, [s * 3.05, 2.6], 1.25, 1.0); return smooth(0.75, 1.05, d) * smooth(2.2, 1.6, d); },
-    { lift: 0.3, thick: 0.18, inward: true, facing: front }));
-  addMuscle("Zygomaticus major", slab(skinMid, p => bump(segDist(p, [s * 4.9, 0.0], [s * 2.6, -4.2]), 0.55) * smooth(-4.8, -3.9, p[1]),
-    { lift: 0.55, thick: 0.22, inward: true, facing: front }));
-  addMuscle("Depressor anguli oris", slab(skinMid, p => bump(segDist(p, [s * 2.7, -4.8], [s * 3.1, -7.6]), 0.7 - 0.15 * smooth(-4.8, -7.6, p[1])),
-    { lift: 0.35, thick: 0.2, inward: true, facing: front }));
-  addMuscle("Nasalis", slab(skinMid, p => bump(segDist(p, [s * 0.75, 2.2], [s * 1.05, -0.4]), 0.45),
-    { lift: 0.18, thick: 0.12, inward: true, facing: front }));
+  const tc = [s * 4.6, -0.8, -1.6];   // temporalis fibres converge on the jaw's coronoid process
+  addMuscle("Temporalis", slab(craniumMid, p => s * p[0] > 3.5 ? bump(Math.hypot((p[1] - 4.4) / 4.3, (p[2] + 4.2) / 5.2), 1) * smooth(-0.6, 1.2, p[1]) : 0,
+    { lift: 0.05, thick: 0.75, facing: (p, n) => smooth(0.15, 0.45, s * n[0]) * outward(p, n), fiber: p => Math.atan2(p[1] - tc[1], p[2] - tc[2]) * 5 }));
+  addMuscle("Masseter", slab(mandibleMid, p => s * p[0] > 3.0 ? bump(Math.hypot((p[1] + 3.4) / 3.1, (p[2] + 1.7) / 2.0), 1) : 0,
+    { lift: 0.05, thick: 0.8, facing: (p, n) => smooth(0.1, 0.4, s * n[0]), fiber: p => p[2] * 0.94 - p[1] * 0.33 }));
+  addMuscle("Orbicularis oculi", slab(skinFine, p => { const d = ell(p, [s * 3.05, 2.6], 1.3, 1.05); return smooth(0.78, 1.0, d) * smooth(2.15, 1.7, d); },
+    { lift: 0.32, thick: 0.16, inward: true, facing: front, fiber: p => ell(p, [s * 3.05, 2.6], 1.3, 1.05) * 1.3 }));
+  addMuscle("Levator labii superioris", slab(skinFine, p => bump(segDist(p, [s * 2.4, 1.0], [s * 1.5, -3.5]), 0.6) * smooth(-3.9, -3.2, p[1]),
+    { lift: 0.5, thick: 0.18, inward: true, facing: front, fiber: p => band(p, [s * 2.4, 1.0], [s * 1.5, -3.5]) }));
+  addMuscle("Zygomaticus major", slab(skinFine, p => bump(segDist(p, [s * 5.0, 0.2], [s * 2.6, -4.2]), 0.5) * smooth(-4.7, -3.9, p[1]),
+    { lift: 0.6, thick: 0.2, inward: true, facing: front, fiber: p => band(p, [s * 5.0, 0.2], [s * 2.6, -4.2]) }));
+  addMuscle("Buccinator", slab(skinFine, p => bump(ell(p, [s * 4.0, -4.5], 1.2, 0.95), 1),
+    { lift: 1.05, thick: 0.18, inward: true, facing: (p, n) => smooth(-0.2, 0.3, s * n[0] + n[2]), fiber: p => p[1] }));
+  addMuscle("Depressor anguli oris", slab(skinFine, p => bump(segDist(p, [s * 2.7, -4.8], [s * 3.1, -7.6]), 0.65 - 0.15 * smooth(-4.8, -7.6, p[1])),
+    { lift: 0.35, thick: 0.18, inward: true, facing: front, fiber: p => band(p, [s * 2.7, -4.8], [s * 3.1, -7.6]) }));
+  addMuscle("Nasalis", slab(skinFine, p => bump(segDist(p, [s * 0.75, 2.2], [s * 1.05, -0.4]), 0.42),
+    { lift: 0.18, thick: 0.1, inward: true, facing: front, fiber: p => band(p, [s * 0.75, 2.2], [s * 1.05, -0.4]) }));
+  const ma = [s * 5.3, -2.6, -6.0], st = [s * 1.3, -14.5, 1.0];   // mastoid to breastbone
+  const scmDir = norm(sub(st, ma)), scmAcross = norm(cross(scmDir, [s, 0, 0.4]));
+  addMuscle("Sternocleidomastoid", slab(skinFine, p => p[1] < -3 ? bump(seg3(p, ma, st), 1.25) : 0,
+    { lift: 0.45, thick: 0.6, inward: true, facing: (p, n) => smooth(-0.1, 0.35, s * n[0] + 0.5 * n[2]), fiber: p => dot(sub(p, ma), scmAcross) }));
 }
-addMuscle("Frontalis", slab(craniumMid, p => p[2] > -3 ? smooth(4.7, 5.8, p[1]) * smooth(10.8, 9.0, p[1]) * smooth(5.8, 4.0, Math.abs(p[0])) : 0,
-  { lift: 0.05, thick: 0.28, facing: (p, n) => smooth(0.2, 0.5, n[2]) * outward(p, n) }));
-addMuscle("Occipitalis", slab(craniumMid, p => p[2] < -11 ? bump(Math.hypot(p[0] / 5.0, (p[1] - 5.0) / 2.6), 1) : 0,
-  { lift: 0.05, thick: 0.3, facing: (p, n) => smooth(0.3, 0.6, -n[2]) * outward(p, n) }));
-addMuscle("Orbicularis oris", slab(skinMid, p => { const d = ell(p, [0, -4.45], 2.3, 1.35); return smooth(0.45, 0.7, d) * smooth(1.15, 0.85, d); },
-  { lift: 0.3, thick: 0.25, inward: true, facing: front }));
-addMuscle("Mentalis", slab(skinMid, p => bump(ell(p, [0, -7.2], 1.1, 0.8), 1), { lift: 0.35, thick: 0.25, inward: true, facing: front }));
-const muscles = merge(muscleParts);
+addMuscle("Frontalis", slab(craniumMid, p => p[2] > -3 ? smooth(4.7, 5.8, p[1]) * smooth(9.8, 8.0, p[1]) * smooth(5.6, 3.8, Math.abs(p[0])) * (0.15 + 0.85 * smooth(0.15, 1.1, Math.abs(p[0]) + 0.25 * Math.max(0, p[1] - 6))) : 0,
+  { lift: 0.05, thick: 0.26, facing: (p, n) => smooth(0.2, 0.5, n[2]) * outward(p, n), fiber: p => p[0] }));
+addMuscle("Procerus", slab(skinFine, p => bump(ell(p, [0, 3.7], 0.45, 0.9), 1), { lift: 0.25, thick: 0.1, inward: true, facing: front, fiber: p => p[0] }));
+addMuscle("Occipitalis", slab(craniumMid, p => p[2] < -11 ? bump(Math.hypot((Math.abs(p[0]) - 2.4) / 2.0, (p[1] - 4.6) / 2.2), 1) : 0,
+  { lift: 0.05, thick: 0.28, facing: (p, n) => smooth(0.3, 0.6, -n[2]) * outward(p, n), fiber: p => p[0] }));
+addMuscle("Orbicularis oris", slab(skinFine, p => { const d = ell(p, [0, -4.45], 2.25, 1.3); return smooth(0.42, 0.68, d) * smooth(1.12, 0.86, d); },
+  { lift: 0.3, thick: 0.24, inward: true, facing: front, fiber: p => ell(p, [0, -4.45], 2.25, 1.3) * 1.6 }));
+addMuscle("Mentalis", slab(skinFine, p => bump(ell(p, [0, -7.2], 1.05, 0.8), 1), { lift: 0.35, thick: 0.22, inward: true, facing: front, fiber: p => p[0] }));
+const muscles = mergeAttr(muscleParts);
 
 // ------------------------------------------------------------------ labels
 function outerPoint(m, dirFrom = HC) {   // the element's point furthest out along its own direction from the head middle
@@ -401,10 +435,23 @@ for (const [a, b, id] of BONES) {
 const hand = J.map(p => sub(p, J[0]));   // for the demo: joint positions, cm, relative to the wrist
 
 // ------------------------------------------------------------------ write
-const TARGET = { skin: 14000, cranium: 36000, jaw: 5000, eyes: 5000, cerebrum: 60000, hindbrain: 12000, muscles: 26000 };
-const head = { skin, cranium, jaw: mandible, eyes, cerebrum, hindbrain, muscles };
+const TARGET = { skin: 14000, cranium: 36000, jaw: 5000, eyes: 5000, cerebrum: 60000, hindbrain: 12000 };
+const head = { skin, cranium, jaw: mandible, eyes, cerebrum, hindbrain };
 const out = [];
 for (const [name, m] of Object.entries(head)) out.push([name, simplify(m, TARGET[name])]);
+// muscles keep their per-vertex fibre data, so they are simplified without welding (vertices are only dropped)
+function simplifyKeep(m, triangles) {
+  const pos32 = Float32Array.from(m.pos);
+  const [dst] = m.idx.length / 3 > triangles ? MeshoptSimplifier.simplify(m.idx, pos32, 3, triangles * 3, 0.01, []) : [m.idx];
+  const map = new Int32Array(m.pos.length / 3).fill(-1), pos = [], attr = [], idx = new Uint32Array(dst.length);
+  for (let i = 0; i < dst.length; i++) {
+    const v = dst[i];
+    if (map[v] < 0) { map[v] = pos.length / 3; pos.push(m.pos[3 * v], m.pos[3 * v + 1], m.pos[3 * v + 2]); attr.push(m.attr[2 * v], m.attr[2 * v + 1]); }
+    idx[i] = map[v];
+  }
+  return { pos: Float64Array.from(pos), idx, attr: Float64Array.from(attr) };
+}
+out.push(["muscles", simplifyKeep(muscles, 30000)]);
 for (const [name, m] of Object.entries(handMeshes)) out.push([name, simplify(m, name === "hand_palm" ? 4000 : 450)]);
 
 const chunks = [], meta = { source: "BodyParts3D, (c) The Database Center for Life Science, CC BY-SA 2.1 JP; simplified and re-aligned; face muscles modelled on its skull and skin", meshes: [], labels, jawPivot: jawPivot.map(v => +v.toFixed(3)), headMiddle: HC, hand: hand.map(p => p.map(v => +v.toFixed(3))) };
@@ -418,9 +465,20 @@ for (const [name, m] of out) {
   const q = new Uint16Array(m.pos.length);
   for (let i = 0; i < m.pos.length; i++) q[i] = Math.round((m.pos[i] - min[i % 3]) / size[i % 3] * 65535);
   const ix = Uint16Array.from(m.idx);
-  meta.meshes.push({ name, nv, ni: ix.length, offV: offset, offI: offset + q.byteLength, min: min.map(v => +v.toFixed(5)), size: size.map(v => +v.toFixed(5)) });
+  const entry = { name, nv, ni: ix.length, offV: offset, offI: offset + q.byteLength, min: min.map(v => +v.toFixed(5)), size: size.map(v => +v.toFixed(5)) };
   chunks.push(Buffer.from(q.buffer), Buffer.from(ix.buffer));
   offset += q.byteLength + ix.byteLength;
+  if (ix.length % 2) { chunks.push(Buffer.alloc(2)); offset += 2; }   // keep the next block 4-byte aligned
+  if (m.attr) {   // [fiber, weight] per vertex
+    const amin = [1e9, 1e9], amax = [-1e9, -1e9];
+    for (let i = 0; i < m.attr.length; i++) { amin[i % 2] = Math.min(amin[i % 2], m.attr[i]); amax[i % 2] = Math.max(amax[i % 2], m.attr[i]); }
+    const asize = amax.map((v, i) => Math.max(1e-6, v - amin[i]));
+    const qa = new Uint16Array(m.attr.length);
+    for (let i = 0; i < m.attr.length; i++) qa[i] = Math.round((m.attr[i] - amin[i % 2]) / asize[i % 2] * 65535);
+    Object.assign(entry, { offA: offset, aMin: amin.map(v => +v.toFixed(5)), aSize: asize.map(v => +v.toFixed(5)) });
+    chunks.push(Buffer.from(qa.buffer)); offset += qa.byteLength;
+  }
+  meta.meshes.push(entry);
   console.log(name.padEnd(14), "triangles", ix.length / 3, "vertices", nv);
 }
 fs.mkdirSync(OUT, { recursive: true });
