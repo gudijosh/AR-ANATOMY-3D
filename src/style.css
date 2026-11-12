@@ -42,6 +42,7 @@ button, select, input { font: inherit; color: inherit; }
   width: max(100vw, calc(100vh * var(--ar, 1.3333)));
   width: max(100vw, calc(100dvh * var(--ar, 1.3333)));
   aspect-ratio: var(--ar, 1.3333);
+  touch-action: none;   /* dragging on the picture moves the lens instead of scrolling the page */
 }
 .stage video, .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 #video { object-fit: cover; transform: scaleX(-1); }

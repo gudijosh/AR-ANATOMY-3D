@@ -151,7 +151,7 @@ for (const k of LAYERS) $("L_" + k).addEventListener("change", e => { S[k] = e.t
 for (const b of $("style").children) b.addEventListener("click", () => { S.style = b.dataset.style; save(); showSettings(); overlay && overlay.applyStyle(); });
 for (const k of SLIDERS) $(k).addEventListener("input", e => { S[k] = parseFloat(e.target.value); save(); showSettings(); });
 $("labels").addEventListener("change", e => { S.labels = e.target.checked; save(); });
-$("reveal").addEventListener("change", e => { S.reveal = e.target.value; S.cut = 0.5; save(); showSettings(); });
+$("reveal").addEventListener("change", e => { S.reveal = e.target.value; S.cut = 0.5; lensAt = { x: 0, y: 0 }; save(); showSettings(); });
 $("showdata").addEventListener("change", e => { S.showdata = e.target.checked; save(); showSettings(); });
 $("fitreset").addEventListener("click", () => { S.fs = S.fw = S.fh = S.fd = 1; S.fx = S.fy = S.fz = 0; save(); showSettings(); });
 // ready-made sets of layers, for the test links only (?preset=organs)
@@ -172,9 +172,25 @@ translatePage(); showSettings(); drawStatus();
 for (const b of document.querySelectorAll("[data-lang]")) b.addEventListener("click", () => setLang(b.dataset.lang));
 onLangChange(() => { showSettings(); drawStatus(); });
 
-let pointer = null;
-stage.addEventListener("pointermove", e => { const r = stage.getBoundingClientRect(); pointer = { x: e.clientX - r.left, y: e.clientY - r.top }; });
-stage.addEventListener("pointerleave", () => { pointer = null; });
+// the lens starts in the middle of the window and is dragged from anywhere on the picture: it moves by as much as the
+// finger moves instead of jumping under it, so the finger never covers what is being looked at
+let lensAt = { x: 0, y: 0 }, lensDrag = null;     // lensAt: how far the lens is from the middle of the window, in px
+const lensPoint = () => {
+  const r = stage.getBoundingClientRect();
+  return { x: innerWidth / 2 + lensAt.x - r.left, y: innerHeight / 2 + lensAt.y - r.top };
+};
+stage.addEventListener("pointerdown", e => {
+  if (S.reveal !== "lens") return;
+  lensDrag = { id: e.pointerId, x: e.clientX, y: e.clientY, ox: lensAt.x, oy: lensAt.y };
+  try { stage.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+});
+stage.addEventListener("pointermove", e => {
+  if (!lensDrag || e.pointerId !== lensDrag.id) return;
+  const hw = innerWidth / 2, hh = innerHeight / 2;
+  lensAt = { x: Math.max(-hw, Math.min(hw, lensDrag.ox + e.clientX - lensDrag.x)),
+             y: Math.max(-hh, Math.min(hh, lensDrag.oy + e.clientY - lensDrag.y)) };
+});
+for (const ev of ["pointerup", "pointercancel"]) stage.addEventListener(ev, e => { if (lensDrag && e.pointerId === lensDrag.id) lensDrag = null; });
 
 async function loadOverlay() {
   const { createOverlay } = await import("./overlay.js");
@@ -227,7 +243,7 @@ function runLive() {
         if (!lostSince) lostSince = now;
         if (now - lostSince > 250) overlay.loseHead();
       }
-      if (hand && (S.hands || S.arms || S.armMuscles || S.reveal === "lens" || S.showdata)) {
+      if (hand && (S.hands || S.arms || S.armMuscles || S.showdata)) {
         const hr = hand.detectForVideo(video, now);
         handList = hr.landmarks || [];
         const sides = hr.handedness || hr.handednesses || [];
@@ -249,7 +265,7 @@ function runLive() {
     const found = overlay.headFound;
     if (!flipBusy) say(found ? (handList.length ? "st.trackingHands" : "st.tracking") : handList.length ? "st.handOnly" : bodyPose ? "st.bodyOnly" : "st.noFace",
       found || handList.length || bodyPose ? "ok" : "bad");
-    overlay.render(now, faceLms, handList, rightSides, pointer, bodyPose);
+    overlay.render(now, faceLms, handList, rightSides, lensPoint(), bodyPose);
   };
   let bodyPose = null;
   tick();
@@ -282,7 +298,7 @@ function runDemo() {
     if (far) {
       // ?legs: the shoulders and arms are out of the picture; ?nobody: the body tracker sees nothing (hands only)
       if (params.has("legs")) for (const i of [11, 12, 13, 14, 15, 16]) f.body[i].visibility = 0;
-      overlay.render(now, noface ? null : f.lms, f.hands, f.sides, pointer, params.has("nobody") ? null : { lms: f.body, world: params.has("noworld") ? null : f.world });
+      overlay.render(now, noface ? null : f.lms, f.hands, f.sides, lensPoint(), params.has("nobody") ? null : { lms: f.body, world: params.has("noworld") ? null : f.world });
       return;
     }
     const ky = 0.021, kx = ky * H / W, curl = 0.5 + 0.5 * Math.sin(time * 0.9);
@@ -290,7 +306,7 @@ function runDemo() {
       const joint = i % 4 === 0 && i ? 2 : i % 4 === 3 ? 1.2 : i % 4 === 2 ? 0.6 : 0;   // fingertips bend most
       return { x: 0.82 - x * kx, y: 0.86 - (y - joint * curl * 0.5) * ky, z: -(z + joint * curl * 0.6) * ky * 0.5 };
     });
-    overlay.render(now, f.lms, [pts], [true], pointer);
+    overlay.render(now, f.lms, [pts], [true], lensPoint());
   };
   tick();
 }
