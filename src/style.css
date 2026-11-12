@@ -321,3 +321,51 @@ details.fold summary:focus-visible { outline: 2px solid #fff; outline-offset: 2p
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .top, .dock, .sheet { background: rgba(28, 28, 32, .9); }
 }
+
+/* ---------------------------------------------------------- rear camera: the picture is shown as it is */
+.stage.unflipped #video, .stage.unflipped #shade, .stage.unflipped #gl { transform: none; }
+.dock-btn.icon-only { padding: 12px 14px; }
+.dock-btn:disabled { opacity: .5; cursor: default; }
+
+/* ---------------------------------------------------------- "what to see": a slim, see-through rail at the side
+   One narrow column down the right edge with almost no backing of its own, so the person stays in view in the middle
+   of the picture while choosing; only the small buttons carry a light tint. */
+#sheet-view {
+  width: 164px; right: max(8px, env(safe-area-inset-right)); left: auto;
+  top: calc(max(14px, env(safe-area-inset-top)) + 62px); bottom: calc(max(16px, env(safe-area-inset-bottom)) + 70px);
+  height: auto; max-height: none;
+  background: rgba(18, 18, 22, .10); border-color: rgba(255, 255, 255, .07); box-shadow: none; border-radius: 18px;
+  -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
+  animation-name: slide; transform-origin: 100% 50%;
+}
+@keyframes slide { from { opacity: 0; transform: translateX(16px); } }
+#sheet-view .sheet-head { padding: 8px 6px 2px 10px; }
+#sheet-view .sheet-head h2 { font-size: 13px; }
+#sheet-view .sheet-close { width: 26px; height: 26px; }
+#sheet-view .sheet-body { padding: 0 6px 8px; }
+#sheet-view .group { padding: 8px 0; border-top-color: rgba(255, 255, 255, .08); }
+#sheet-view .group h3 { margin: 0 0 6px 4px; font-size: 11px; }
+#sheet-view .chips, #sheet-view .tiles { grid-template-columns: 1fr; gap: 4px; }
+#sheet-view .chips button, #sheet-view .tile, #sheet-view .cat { background: rgba(30, 30, 36, .34); }
+#sheet-view .chips button { padding: 6px 8px; font-size: 12.5px; border-radius: 11px; }
+#sheet-view .chips button:hover, #sheet-view .tile:hover { background: rgba(60, 60, 70, .5); }
+#sheet-view .tile { min-height: 32px; padding: 4px 8px 4px 5px; border-radius: 11px; }
+#sheet-view .tile:has(input:checked) { background: rgba(255, 255, 255, .86); }
+#sheet-view .cat { border-radius: 13px; }
+#sheet-view .cat.open { background: rgba(30, 30, 36, .2); }
+#sheet-view .cat-head { padding: 3px 6px 3px 3px; }
+#sheet-view .cat-toggle { gap: 7px; padding: 2px; }
+#sheet-view .cat-toggle .ic { width: 26px; height: 26px; }
+#sheet-view .cat-toggle .ic .ico { width: 15px; height: 15px; }
+#sheet-view .cat-name { font-size: 13px; }
+#sheet-view .cat-count { font-size: 11px; }
+#sheet-view .chev .ico { width: 14px; height: 14px; }
+#sheet-view .cat-inner .tiles { padding: 0 4px 5px; }
+#sheet-view .cat-all { justify-content: space-between; padding: 3px 8px 6px 10px; font-size: 12px; }
+#sheet-view .cat-all input { width: 36px; height: 21px; }
+#sheet-view .cat-all input::after { width: 17px; height: 17px; }
+#sheet-view .cat-all input:checked::after { transform: translateX(15px); }
+@media (max-width: 600px) {
+  #sheet-view { width: 138px; left: auto; right: max(6px, env(safe-area-inset-right)); max-height: none; }
+  #sheet-view .cat-count { display: none; }
+}

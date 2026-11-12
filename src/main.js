@@ -74,9 +74,10 @@ const bodyActive = () => BODY_KEYS.some(k => S[k]);
           <span class="cat-name" data-i18n="cat.${c.id}"></span><span class="cat-count" id="cnt-${c.id}"></span>
           <span class="chev">${icon("chevron")}</span>
         </button>
-        <label class="cat-all"><span data-i18n="all"></span><input type="checkbox" id="all-${c.id}" data-i18n-aria="cat.all.${c.id}"></label>
       </div>
-      <div class="cat-body" id="cat-${c.id}"><div class="cat-inner"><div class="tiles">${c.items.map(([k, col]) =>
+      <div class="cat-body" id="cat-${c.id}"><div class="cat-inner">
+        <label class="cat-all"><span data-i18n="all"></span><input type="checkbox" id="all-${c.id}" data-i18n-aria="cat.all.${c.id}"></label>
+        <div class="tiles">${c.items.map(([k, col]) =>
         `<label class="tile"><input type="checkbox" id="L_${k}"><span class="ic" style="--c:${col}">${icon(k)}</span><span data-i18n="l.${k}"></span></label>`).join("")}</div></div></div>`;
     host.appendChild(wrap);
     wrap.querySelector(".cat-toggle").addEventListener("click", () => {
@@ -202,7 +203,7 @@ async function loadTrackers() {
 
 function runLive() {
   let lastFrame = -1, lostSince = 0, said = "";
-  const say = (key, c, vars) => { const id = key + JSON.stringify(vars || ""); if (said !== id) { said = id; setStatus(key, c, vars); } };
+  const say = (key, c, vars) => { const id = key + JSON.stringify(vars || ""); if (said !== id || statusNow.key !== key) { said = id; setStatus(key, c, vars); } };
   const tick = () => {
     requestAnimationFrame(tick);
     if (video.readyState < 2 || video.currentTime === lastFrame) return;
@@ -243,8 +244,8 @@ function runLive() {
       } else bodyPose = null;
     } catch (e) { say("st.trackerError", "bad", { msg: e.message }); return; }
     const found = overlay.headFound;
-    say(found ? (handList.length ? "st.trackingHands" : "st.tracking") : handList.length ? "st.handOnly" : "st.noFace",
-      found || handList.length ? "ok" : "bad");
+    if (!flipBusy) say(found ? (handList.length ? "st.trackingHands" : "st.tracking") : handList.length ? "st.handOnly" : bodyPose ? "st.bodyOnly" : "st.noFace",
+      found || handList.length || bodyPose ? "ok" : "bad");
     overlay.render(now, faceLms, handList, rightSides, pointer, bodyPose);
   };
   let bodyPose = null;
@@ -267,6 +268,7 @@ function runDemo() {
   if (params.get("lang")) setLang(params.get("lang"));
   // test settings: ?turn=1.5 makes the pretend body turn further (radians), ?noface hides the face from the body's sizing
   const turn = parseFloat(params.get("turn")) || undefined, noface = params.has("noface");
+  if (params.has("rear")) { viewFlipped = false; stage.classList.add("unflipped"); overlay.setView(false); }   // ?rear: the un-flipped view of a rear camera
   const tick = () => {
     requestAnimationFrame(tick);   // a still scene keeps redrawing the same moment
     const now = performance.now(), time = still ? 1.2 : now / 1000;
@@ -285,6 +287,56 @@ function runDemo() {
   tick();
 }
 
+// ------------------------------------------------------------ camera
+// The front camera is shown flipped, like a looking-glass; a rear camera (to look at someone else, or at your own arm
+// or feet) is shown as it is. The page's styles and the overlay both follow `viewFlipped`.
+let camStream = null, viewFlipped = true, flipBusy = false;
+const camFacing = () => { const tr = camStream && camStream.getVideoTracks()[0]; return (tr && tr.getSettings && tr.getSettings().facingMode) || ""; };
+const camDevice = () => { const tr = camStream && camStream.getVideoTracks()[0]; return (tr && tr.getSettings && tr.getSettings().deviceId) || ""; };
+const openCamera = which => navigator.mediaDevices.getUserMedia({ video: { ...which, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+const stopCamera = () => { if (camStream) for (const tr of camStream.getTracks()) tr.stop(); camStream = null; };
+async function showStream(stream) {
+  camStream = stream;
+  viewFlipped = camFacing() !== "environment";
+  stage.classList.toggle("unflipped", !viewFlipped);
+  video.srcObject = stream; video.hidden = false;
+  await Promise.race([video.play(), new Promise(r => setTimeout(r, 2500))]);   // some browsers never settle play() for a still stream
+  if (video.videoWidth && video.videoHeight) stage.style.setProperty("--ar", (video.videoWidth / video.videoHeight).toFixed(4));
+  if (overlay) { overlay.resize(); overlay.setView(viewFlipped); }
+}
+// the flip button only appears when the device really has another camera
+async function offerFlip() {
+  try {
+    const cams = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === "videoinput");
+    $("flip").hidden = cams.length < 2;
+  } catch { $("flip").hidden = true; }
+}
+$("flip").addEventListener("click", async () => {
+  if (flipBusy || !camStream) return;
+  flipBusy = true; $("flip").disabled = true;
+  const facing = camFacing(), device = camDevice();
+  // phones say which way a camera faces; computers with two cameras don't, so there the next camera in the list is taken
+  let next, back;
+  if (facing === "user" || facing === "environment") {
+    next = { facingMode: { exact: facing === "user" ? "environment" : "user" } }; back = { facingMode: facing };
+  } else {
+    const cams = (await navigator.mediaDevices.enumerateDevices().catch(() => [])).filter(d => d.kind === "videoinput" && d.deviceId);
+    const i = cams.findIndex(d => d.deviceId === device), other = cams.length > 1 ? cams[(i + 1) % cams.length] : null;
+    next = other ? { deviceId: { exact: other.deviceId } } : null; back = device ? { deviceId: { exact: device } } : { facingMode: "user" };
+  }
+  try {
+    if (!next) throw new Error("no other camera");
+    setStatus("st.switching");
+    stopCamera();   // phones only lend one camera at a time: the first must be released before the other opens
+    await showStream(await openCamera(next));
+    setStatus("st.tracking", "ok");
+  } catch {
+    try { stopCamera(); await showStream(await openCamera(back)); setStatus("st.flipFailed", "bad"); }
+    catch { setStatus("st.cameraLost", "bad"); }
+  }
+  flipBusy = false; $("flip").disabled = false;
+});
+
 // ------------------------------------------------------------ start
 $("start").addEventListener("click", async () => {
   $("start").disabled = true;
@@ -294,13 +346,8 @@ $("start").addEventListener("click", async () => {
       throw new Error(t("err.noCamera"));
     setStatus("st.asking");
     const params = new URLSearchParams(location.search);
-    const stream = PHOTO ? await photoStream(PHOTO, (params.get("crop") || "").split(",").filter(Boolean).map(Number))
-      : await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false,
-      });
-    video.srcObject = stream; video.hidden = false;
-    await Promise.race([video.play(), new Promise(r => setTimeout(r, 2500))]);   // some browsers never settle play() for a still stream
-    if (video.videoWidth && video.videoHeight) stage.style.setProperty("--ar", (video.videoWidth / video.videoHeight).toFixed(4));
+    if (PHOTO) await showStream(await photoStream(PHOTO, (params.get("crop") || "").split(",").filter(Boolean).map(Number)));
+    else await showStream(await openCamera({ facingMode: "user" }));
     $("intro").hidden = true;
     step = "step.engine";
     setStatus("st.loading3d");
@@ -309,8 +356,9 @@ $("start").addEventListener("click", async () => {
     setStatus("st.loadingTrackers");
     await loadTrackers();
     if (!hand) $("L_hands").disabled = true;
-    overlay.resize();
+    overlay.resize(); overlay.setView(viewFlipped);
     runLive();
+    if (!PHOTO) offerFlip();
   } catch (err) {
     $("start").disabled = false;
     $("intro").hidden = false; video.hidden = true;
