@@ -481,10 +481,8 @@ export async function createOverlay({ stage, S }) {
     let mask = "none", lens = null;
     if (S.reveal === "lens") {
       const r = (0.07 + 0.38 * S.cut) * W;
-      let cx = W / 2, cy = H / 2;    // in the unflipped picture
-      if (handList[0]) { cx = handList[0][8].x * W; cy = handList[0][8].y * H; }
-      else if (pointer) { cx = fx(pointer.x); cy = pointer.y; }
-      else if (face && face[1]) { cx = face[1].x * W; cy = face[1].y * H; }
+      let cx = W / 2, cy = H / 2;    // in the unflipped picture; the lens sits where it was last dragged to
+      if (pointer) { cx = fx(pointer.x); cy = pointer.y; }
       mask = `radial-gradient(circle ${r.toFixed(1)}px at ${cx.toFixed(1)}px ${cy.toFixed(1)}px, #000 ${(98 - 78 * S.feather).toFixed(0)}%, transparent 100%)`;
       lens = { x: fx(cx), y: cy, r };
     }
