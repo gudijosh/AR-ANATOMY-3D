@@ -537,20 +537,21 @@ export async function createOverlay({ stage, S }) {
     const m = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(-0.06 + 0.05 * Math.sin(t * 0.7), (far ? turn : 0.42) * Math.sin(t * 0.5 + 0.9), 0.04, "YXZ"));
     m.setPosition(far ? -2 + 3 * Math.sin(t * 0.4) : -5 + 2 * Math.sin(t * 0.4), far ? 64 : 1.5, -dist);
     const cv = new THREE.Vector3(), nv = new THREE.Vector3();
-    const proj = p => { cv.fromArray(p).applyMatrix4(m); nv.copy(cv).applyMatrix4(baseProj); return { x: (nv.x + 1) / 2, y: (1 - nv.y) / 2, cz: cv.z }; };
+    const proj = p => { cv.fromArray(p).applyMatrix4(m); nv.copy(cv).applyMatrix4(baseProj); return { x: (nv.x + 1) / 2, y: (1 - nv.y) / 2, cx: cv.x, cy: cv.y, cz: cv.z }; };
     const lms = [];
     for (const id of FIT_IDS) { const q = proj(FIT_POINTS[id]); lms[id] = { x: q.x, y: q.y, z: 0 }; }
     if (!far) return { matrix: m.elements, lms };
     const xPerCm = 1 / (2 * dist * Math.tan(TRACKER_FOV / 2 * D2R) * (W / H));   // picture widths per cm at that distance
     const J = BODY_META.joints, pts = {};
     for (const k in J) pts[k] = proj(J[k]);
-    const hipZ = (pts[23].cz + pts[24].cz) / 2, bodyLms = [];
+    const hipZ = (pts[23].cz + pts[24].cz) / 2, bodyLms = [], world = [];
+    for (const k in pts) world[k] = { x: pts[k].cx / 100, y: -pts[k].cy / 100, z: -(pts[k].cz - hipZ) / 100 };   // metres, y down, nearer = smaller z, like the tracker's
     for (const k in pts) bodyLms[k] = { x: pts[k].x, y: pts[k].y, z: -(pts[k].cz - hipZ) * xPerCm, visibility: 1 };
     const hand = (wrist, flip) => {
       const w = J[wrist], raw = HAND_JOINTS.map(o => proj([w[0] + o[0] * flip * 1.07, w[1] + o[1] * 1.07, w[2] + o[2] * 1.07]));
       return raw.map(q => ({ x: q.x, y: q.y, z: -(q.cz - raw[0].cz) * xPerCm }));
     };
-    return { matrix: m.elements, lms, body: bodyLms, hands: [hand(16, 1), hand(15, -1)], sides: [true, false] };
+    return { matrix: m.elements, lms, body: bodyLms, world, hands: [hand(16, 1), hand(15, -1)], sides: [true, false] };
   }
 
   return { setHead, loseHead, setView, render, applyStyle, resize, demoFace, get size() { return { W, H }; }, get headFound() { return pose.found; } };
