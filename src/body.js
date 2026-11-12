@@ -60,7 +60,11 @@ export async function createBody({ scene, material }) {
   // The tracker's body depth swings by a third of the picture on a still image, so it is left out: the body is
   // placed facing the camera (turning still narrows it through the shoulder width) and nothing twists by itself.
 
-  function update(lms, W, H, now = performance.now()) {
+  // how far the torso is turned: its shoulders look narrower than when it faces the camera, measured against the
+  // face's size (which doesn't change when only the body turns); the normal front-on proportion is learnt as it goes
+  const ratioF = new OneEuro(0.6, 0), sideF = new OneEuro(0.4, 0), rawZ = {};
+  let frontRatio = 0, turnSide = 1, turnCos = 1;
+  function update(lms, W, H, now = performance.now(), headRef = 0) {
     if (!lms) {   // keep the last pose for a moment, so a single missed frame doesn't make it blink
       if (found && now - lostAt > 400) { found = false; for (const s of Object.values(segs)) s.group.visible = false; for (const i of POSE_IDS) { filt[i].reset(); fresh[i] = true; } scaleF.reset(); deadRef = 0; }
       if (!lostAt) lostAt = now;
@@ -71,6 +75,7 @@ export async function createBody({ scene, material }) {
       const p = lms[i]; if (!p) continue;
       const v = p.visibility === undefined ? 1 : p.visibility;
       vis[i] += (v - vis[i]) * 0.3;
+      rawZ[i] = p.z || 0;
       if (found && v < 0.3) continue;   // a point the camera can't see keeps its last place instead of jumping
       V.set(p.x * W, (1 - p.y) * H, 0);
       filt[i].filter(V, now);
@@ -83,7 +88,17 @@ export async function createBody({ scene, material }) {
     if (window.__bodyPose) window.__bodyDrawn = POSE_IDS.map(i => [i, P[i].x, P[i].y]);   // test mode only
     // one steady body scale (pixels per cm) from the shoulder width
     e1.subVectors(P[11], P[12]);
-    pxPerCm = scaleF.filter(Math.hypot(e1.x, e1.y) / meta.shoulderW, now);
+    const flatW = Math.hypot(e1.x, e1.y);
+    if (headRef > 1) {
+      const r = ratioF.filter(flatW / headRef, now);
+      frontRatio = Math.max(r, frontRatio * 0.9999, 3.4);   // widest seen = facing the camera (slowly forgotten)
+      turnCos = THREE.MathUtils.clamp(r / frontRatio, 0.22, 1);
+    } else turnCos += (1 - turnCos) * 0.05;   // no face to compare with: ease back to facing the camera
+    // which way: only the averaged sign of the tracker's depth (which shoulder is nearer), never its noisy size
+    const side = sideF.filter((rawZ[12] || 0) - (rawZ[11] || 0), now);
+    if (Math.abs(side) > 0.04) turnSide = Math.sign(side);
+    e1.z = turnSide * flatW * Math.tan(Math.acos(turnCos));   // the shoulder line in 3D
+    pxPerCm = scaleF.filter(e1.length() / meta.shoulderW, now);
     deadRef = pxPerCm * meta.shoulderW;   // shoulder width in pixels: the size of the dead zone scales with the body
     shMid.addVectors(P[11], P[12]).multiplyScalar(0.5);
     // hips out of view (sitting at a desk): place them below the shoulders from the body's proportions
@@ -94,10 +109,10 @@ export async function createBody({ scene, material }) {
     // torso: shoulder frame above, hip frame below (same width: the pelvis follows the shoulders' scale), blended in the shader
     const T = segs.torso;
     e2.subVectors(shMid, mid);
-    front.set(0, 0, 1); up.copy(e2).normalize();
+    front.crossVectors(e1, e2).normalize(); up.copy(e2).normalize();   // turns with the torso, so organs show their depth from the side
     e3.copy(front).multiplyScalar(pxPerCm * Math.sqrt(meta.shoulderW * meta.torsoH));
     h1.subVectors(P[23], P[24]);
-    if (hipSeen < 0.5 || h1.lengthSq() < 1) h1.copy(e1); else h1.setLength(e1.length());
+    if (hipSeen < 0.5 || h1.lengthSq() < 1) h1.copy(e1); else { h1.z = 0; h1.setLength(flatW); h1.z = e1.z; }
     T.matrix.makeBasis(e1, e2, e3).setPosition(mid);
     T.hip.makeBasis(h1, e2, e3).setPosition(mid);
     T.on = showOrHide(T.on, Math.min(vis[11], vis[12]));
