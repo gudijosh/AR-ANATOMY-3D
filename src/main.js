@@ -228,41 +228,45 @@ function runLive() {
     if (video.readyState < 2 || video.currentTime === lastFrame) return;
     lastFrame = video.currentTime;
     const now = performance.now();
-    let faceLms = null, handList = [], rightSides = [];
-    try {
+    let faceLms = null, handList = [], rightSides = [], headSet = false, failed = null;
+    // each tracker on its own: if one of them fails on a frame, the others still draw
+    const run = fn => { try { fn(); } catch (e) { failed = e; } };
+    run(() => {
       const fr = face.detectForVideo(video, now);
-      faceLms = fr.faceLandmarks && fr.faceLandmarks[0];
+      const lms = fr.faceLandmarks && fr.faceLandmarks[0];
       const mat = fr.facialTransformationMatrixes && fr.facialTransformationMatrixes[0];
-      if (faceLms && mat) {
+      if (lms && mat) {
         let jaw = 0;
         const shapes = fr.faceBlendshapes && fr.faceBlendshapes[0];
         if (shapes) for (const c of shapes.categories) if (c.categoryName === "jawOpen") jaw = c.score;
-        overlay.setHead(mat.data, faceLms, jaw); lostSince = 0;
-      } else {
-        faceLms = null;
-        if (!lostSince) lostSince = now;
-        if (now - lostSince > 250) overlay.loseHead();
+        overlay.setHead(mat.data, lms, jaw); faceLms = lms; headSet = true; lostSince = 0;
       }
-      if (hand && (S.hands || S.arms || S.armMuscles || S.showdata)) {
-        const hr = hand.detectForVideo(video, now);
-        handList = hr.landmarks || [];
-        const sides = hr.handedness || hr.handednesses || [];
-        // the tracker names hands as if the picture were flipped; ours isn't, so swap them
-        rightSides = handList.map((h, i) => !!(sides[i] && sides[i][0] && sides[i][0].categoryName === "Left"));
+    });
+    if (!headSet) {
+      faceLms = null;
+      if (!lostSince) lostSince = now;
+      if (now - lostSince > 250) overlay.loseHead();
+    }
+    if (hand && (S.hands || S.arms || S.armMuscles || S.showdata)) run(() => {
+      const hr = hand.detectForVideo(video, now);
+      const list = hr.landmarks || [], sides = hr.handedness || hr.handednesses || [];
+      // the tracker names hands as if the picture were flipped; ours isn't, so swap them
+      rightSides = list.map((h, i) => !!(sides[i] && sides[i][0] && sides[i][0].categoryName === "Left"));
+      handList = list;
+    });
+    bodyPose = null;
+    if (body && bodyActive()) run(() => {
+      const pr = body.detectForVideo(video, now);
+      if (pr.landmarks && pr.landmarks[0]) {
+        const mk = pr.segmentationMasks && pr.segmentationMasks[0];
+        const mask = mk ? { data: Float32Array.from(mk.getAsFloat32Array()), width: mk.width, height: mk.height } : null;
+        if (mk && mk.close) mk.close();
+        bodyPose = { lms: pr.landmarks[0], world: pr.worldLandmarks && pr.worldLandmarks[0], mask };
+        if (PHOTO) window.__bodyPose = bodyPose.lms;   // test mode only: lets a test read the raw points
       }
-      if (body && bodyActive()) {
-        const pr = body.detectForVideo(video, now);
-        bodyPose = null;
-        if (pr.landmarks && pr.landmarks[0]) {
-          const mk = pr.segmentationMasks && pr.segmentationMasks[0];
-          const mask = mk ? { data: Float32Array.from(mk.getAsFloat32Array()), width: mk.width, height: mk.height } : null;
-          if (mk && mk.close) mk.close();
-          bodyPose = { lms: pr.landmarks[0], world: pr.worldLandmarks && pr.worldLandmarks[0], mask };
-          if (PHOTO) window.__bodyPose = bodyPose.lms;   // test mode only: lets a test read the raw points
-        }
-      } else bodyPose = null;
-    } catch (e) { say("st.trackerError", "bad", { msg: e.message }); return; }
+    });
     const found = overlay.headFound;
+    if (failed && !found && !handList.length && !bodyPose) { say("st.trackerError", "bad", { msg: failed.message }); return; }
     if (!flipBusy) say(found ? (handList.length ? "st.trackingHands" : "st.tracking") : handList.length ? "st.handOnly" : bodyPose ? "st.bodyOnly" : "st.noFace",
       found || handList.length || bodyPose ? "ok" : "bad");
     overlay.render(now, faceLms, handList, rightSides, lensPoint(), bodyPose);
@@ -320,14 +324,37 @@ const camDevice = () => { const tr = camStream && camStream.getVideoTracks()[0];
 const openCamera = which => navigator.mediaDevices.getUserMedia({ video: { ...which, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
 const stopCamera = () => { if (camStream) for (const tr of camStream.getTracks()) tr.stop(); camStream = null; };
 async function showStream(stream) {
-  camStream = stream;
+  camStream = stream; camWanted = true;
   viewFlipped = camFacing() !== "environment";
   stage.classList.toggle("unflipped", !viewFlipped);
   video.srcObject = stream; video.hidden = false;
   await Promise.race([video.play(), new Promise(r => setTimeout(r, 2500))]);   // some browsers never settle play() for a still stream
-  if (video.videoWidth && video.videoHeight) stage.style.setProperty("--ar", (video.videoWidth / video.videoHeight).toFixed(4));
+  syncShape();
+  const tr = stream.getVideoTracks()[0];
+  if (tr) tr.addEventListener("ended", reviveCamera);   // the system took the camera away (another app, a locked phone)
   if (overlay) { overlay.resize(); overlay.setView(viewFlipped); }
 }
+// the picture's own shape: it changes when a phone is turned on its side, and the anatomy only lines up if the stage follows
+function syncShape() {
+  if (!video.videoWidth || !video.videoHeight) return;
+  const ar = (video.videoWidth / video.videoHeight).toFixed(4);
+  if (stage.style.getPropertyValue("--ar") === ar) return;
+  stage.style.setProperty("--ar", ar);
+  if (overlay) { overlay.resize(); overlay.setView(viewFlipped); }
+}
+video.addEventListener("resize", syncShape);
+// coming back to the app after the camera was stopped behind its back: open the same camera again
+let camWhich = { facingMode: "user" }, camWanted = false;   // camWanted: a camera has been opened once, so it should be kept alive
+async function reviveCamera() {
+  if (DEMO || PHOTO || flipBusy || !camWanted || document.hidden) return;
+  const tr = camStream && camStream.getVideoTracks()[0];
+  if (tr && tr.readyState === "live") { if (video.paused) video.play().catch(() => { /* ignore */ }); return; }
+  flipBusy = true;
+  try { stopCamera(); await showStream(await openCamera(camWhich)); setStatus("st.tracking", "ok"); }
+  catch { setStatus("st.cameraLost", "bad"); }
+  flipBusy = false;
+}
+document.addEventListener("visibilitychange", reviveCamera);
 // the flip button only appears when the device really has another camera
 async function offerFlip() {
   try {
@@ -352,10 +379,10 @@ $("flip").addEventListener("click", async () => {
     if (!next) throw new Error("no other camera");
     setStatus("st.switching");
     stopCamera();   // phones only lend one camera at a time: the first must be released before the other opens
-    await showStream(await openCamera(next));
+    await showStream(await openCamera(next)); camWhich = next;
     setStatus("st.tracking", "ok");
   } catch {
-    try { stopCamera(); await showStream(await openCamera(back)); setStatus("st.flipFailed", "bad"); }
+    try { stopCamera(); await showStream(await openCamera(back)); camWhich = back; setStatus("st.flipFailed", "bad"); }
     catch { setStatus("st.cameraLost", "bad"); }
   }
   flipBusy = false; $("flip").disabled = false;
