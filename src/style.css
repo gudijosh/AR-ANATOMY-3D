@@ -377,6 +377,12 @@ details.fold summary:focus-visible { outline: 2px solid #fff; outline-offset: 2p
 .sheet:not(#sheet-view) { width: 184px !important; }
 .sheet .row { flex-direction: column; align-items: stretch; gap: 4px; margin-top: 9px; padding: 0 4px; font-size: 12.5px; }
 .sheet .row input[type=range], .sheet .row select { max-width: none; width: 100%; }
+/* every control keeps one fixed place: the slider has its own full height under its name (it used to collapse and ride up
+   over the text), and the name and its number share one line that never wraps, so nothing shifts while a value changes */
+.sheet .row input[type=range] { flex: none; height: 24px; touch-action: pan-y; }
+.sheet .row label { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; white-space: nowrap; }
+.sheet .row label > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.sheet .row label b { flex: none; margin-left: 0; font-size: 11px; }
 .sheet select { font-size: 12px; padding: 5px 7px; background: rgba(30, 30, 36, .5); }
 .sheet .seg { background: rgba(30, 30, 36, .34); }
 .sheet .seg button { font-size: 12px; padding: 6px 6px; }
