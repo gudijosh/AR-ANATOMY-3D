@@ -45,6 +45,8 @@ button, select, input { font: inherit; color: inherit; }
 }
 .stage video, .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 #video { object-fit: cover; transform: scaleX(-1); }
+/* no built-in play button over the picture (it showed flipped on the start screen) */
+#video::-webkit-media-controls, #video::-webkit-media-controls-start-playback-button, #video::-webkit-media-controls-overlay-play-button { display: none !important; -webkit-appearance: none; }
 #shade, #gl { transform: scaleX(-1); pointer-events: none; }
 #hud { pointer-events: none; }
 
@@ -60,15 +62,21 @@ button, select, input { font: inherit; color: inherit; }
 .top {
   position: fixed; z-index: 3;
   top: max(14px, env(safe-area-inset-top)); left: var(--gap); right: max(14px, env(safe-area-inset-right));
-  display: flex; align-items: center; gap: 16px;
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
   padding: 8px 8px 8px 18px; border-radius: 18px;
 }
 h1 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -.01em; white-space: nowrap; flex: none; }
-.status { flex: 1; display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--soft); }
+/* a small message above the dock, only while something is loading or wrong */
+.toast {
+  position: fixed; z-index: 3; left: 50%; transform: translateX(-50%);
+  bottom: calc(max(16px, env(safe-area-inset-bottom)) + 76px); max-width: min(520px, calc(100vw - 28px));
+  display: flex; align-items: center; gap: 8px; padding: 9px 14px; border-radius: 14px; color: var(--soft);
+  background: var(--glass); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur);
+  border: 1px solid rgba(255, 255, 255, .1);
+}
 .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex: none; }
-.status:has(#status.ok) .dot { background: var(--ok); }
-.status:has(#status.bad) .dot { background: var(--bad); }
-#status { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.toast:has(#status.bad) .dot { background: var(--bad); }
+#status { font-size: 13px; line-height: 1.35; }
 #status.ok { color: var(--fg); }
 #status.bad { color: var(--bad); }
 .lang { display: flex; padding: 3px; border-radius: 12px; background: var(--fill); flex: none; }
@@ -86,9 +94,9 @@ h1 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -.01em; white
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 18px; text-align: center; padding: 96px 28px 120px;
 }
-#intro h2 { margin: 0; font-size: clamp(38px, 6vw, 72px); line-height: 1; font-weight: 600; letter-spacing: -.045em; }
+#intro h2 { margin: 0; max-width: 14ch; font-size: clamp(34px, 5.4vw, 64px); line-height: 1.04; font-weight: 600; letter-spacing: -.045em; }
 #intro p { margin: 0; color: var(--muted); max-width: 40ch; font-size: 15px; }
-#intro .note { font-size: 12px; max-width: 52ch; margin-top: 8px; }
+#intro .note { font-size: 13px; max-width: 44ch; margin-top: 8px; }
 button.big {
   margin-top: 6px; font-size: 16px; font-weight: 600;
   color: #111; background: #fff; border: 0; border-radius: 999px; padding: 14px 28px; cursor: pointer;
@@ -306,9 +314,6 @@ details.fold summary:focus-visible { outline: 2px solid #fff; outline-offset: 2p
   .tile > span:last-child { font-size: 12px; }
   .tile .ic { width: 22px; height: 22px; }
   .tile .ic .ico { width: 13px; height: 13px; }
-}
-@media (max-width: 380px) {
-  h1 { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   .sheet { animation: none; }
