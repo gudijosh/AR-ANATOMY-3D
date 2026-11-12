@@ -84,6 +84,10 @@ export async function createOverlay({ stage, S }) {
   const $ = id => document.getElementById(id);
   const glCanvas = $("gl"), shade = $("shade"), hud = $("hud");
   let W = 640, H = 480, sized = false;
+  // the front camera is shown flipped like a looking-glass; a rear camera is shown as it is. The 3D layers are flipped
+  // by the page's styles; the heads-up layer (labels, points) is not, so its x is turned here when the view is flipped
+  let flipped = true;
+  const fx = x => flipped ? W - x : x;
 
   const renderer = new THREE.WebGLRenderer({ canvas: glCanvas, alpha: true, antialias: true });
   renderer.setClearColor(0x000000, 0);
@@ -137,7 +141,7 @@ export async function createOverlay({ stage, S }) {
   });
   const handMeshes = r => [r.palm, ...r.fingers];
   const body = await createBody({ scene: handScene, material });
-  body.setSize(() => W, () => H);
+  body.setSize(() => W, () => H, x => fx(x));
 
   function forEachMaterial(fn) {
     for (const k in parts) fn(parts[k].mesh.material, parts[k]);
@@ -257,13 +261,19 @@ export async function createOverlay({ stage, S }) {
     cam.projectionMatrixInverse.copy(cam.projectionMatrix).invert();
 
     // the person's own adjustments (their left is +x, so the flipped view reverses it)
-    fitM.makeScale(S.fs * S.fw, S.fs * S.fh, S.fs * S.fd).setPosition(-S.fx, S.fy, S.fz);
+    fitM.makeScale(S.fs * S.fw, S.fs * S.fh, S.fs * S.fd).setPosition(flipped ? -S.fx : S.fx, S.fy, S.fz);
     head.matrix.copy(M).multiply(fitM);
     head.matrixWorldNeedsUpdate = true;
     head.visible = true;
     jawHinge.rotation.x = Math.min(1, Math.max(0, pose.jaw)) * 0.36;
   }
   function loseHead() { pose.found = false; pose.fitSet = false; head.visible = false; }
+  // a different camera (or a different person in front of it): forget everything learnt from the last picture
+  function setView(isFlipped) {
+    flipped = !!isFlipped; loseHead(); body.reset();
+    for (const rig of hands) rig.group.visible = false;
+    remembered.clear();
+  }
 
   const cut = { on: 0, x: 1, y: 0, w: 0 };
   function applyLayers() {
@@ -344,7 +354,7 @@ export async function createOverlay({ stage, S }) {
   const LP = new THREE.Vector3(), LN = new THREE.Vector3(), LC = new THREE.Vector3();
   const remembered = new Map();
   let frame = 0, split = 0;
-  function onScreen(v) { LC.copy(v).applyMatrix4(cam.projectionMatrix); return { x: W - (LC.x + 1) / 2 * W, y: (1 - LC.y) / 2 * H }; }
+  function onScreen(v) { LC.copy(v).applyMatrix4(cam.projectionMatrix); return { x: fx((LC.x + 1) / 2 * W), y: (1 - LC.y) / 2 * H }; }
   function headLabels(lens) {
     const out = [], solid = S.style === "solid", HMx = head.matrix;
     for (const L of LABELS) {
@@ -415,12 +425,12 @@ export async function createOverlay({ stage, S }) {
     if (!S.hands) return;
     hands.forEach((rig, i) => {
       if (!rig.group.visible || !rig.pts) return;
-      const P = rig.pts, at = (a, b, k) => ({ ax: W - (P[a].x + (P[b].x - P[a].x) * k), ay: H - (P[a].y + (P[b].y - P[a].y) * k) });
+      const P = rig.pts, at = (a, b, k) => ({ ax: fx(P[a].x + (P[b].x - P[a].x) * k), ay: H - (P[a].y + (P[b].y - P[a].y) * k) });
       const items = [["Distal phalanx", 11, 12, 0.5], ["Middle phalanx", 10, 11, 0.5], ["Proximal phalanx", 9, 10, 0.5],
         ["Metacarpal", 0, 9, 0.62], ["Carpal bones (wrist)", 0, 9, 0.12]]
         .map(([text, a, b, k]) => ({ text: anatomyName(text), color: LABEL_INK.hands, ...at(a, b, k) }))
         .filter(it => !lens || Math.hypot(it.ax - lens.x, it.ay - lens.y) <= lens.r);
-      let lo = 1e9, hi = -1e9; for (const p of P) { lo = Math.min(lo, W - p.x); hi = Math.max(hi, W - p.x); }
+      let lo = 1e9, hi = -1e9; for (const p of P) { lo = Math.min(lo, fx(p.x)); hi = Math.max(hi, fx(p.x)); }
       const outerRight = (lo + hi) / 2 > hx, far = outerRight ? lo - 1e4 : hi + 1e4;
       drawColumns(g, items, far, outerRight ? hi - far : far - lo, "hand" + i + ":");
     });
@@ -463,10 +473,10 @@ export async function createOverlay({ stage, S }) {
       const r = (0.07 + 0.38 * S.cut) * W;
       let cx = W / 2, cy = H / 2;    // in the unflipped picture
       if (handList[0]) { cx = handList[0][8].x * W; cy = handList[0][8].y * H; }
-      else if (pointer) { cx = W - pointer.x; cy = pointer.y; }
+      else if (pointer) { cx = fx(pointer.x); cy = pointer.y; }
       else if (face && face[1]) { cx = face[1].x * W; cy = face[1].y * H; }
       mask = `radial-gradient(circle ${r.toFixed(1)}px at ${cx.toFixed(1)}px ${cy.toFixed(1)}px, #000 ${(98 - 78 * S.feather).toFixed(0)}%, transparent 100%)`;
-      lens = { x: W - cx, y: cy, r };
+      lens = { x: fx(cx), y: cy, r };
     }
     for (const c of [glCanvas, shade]) { c.style.maskImage = mask; c.style.webkitMaskImage = mask; }
 
@@ -479,13 +489,13 @@ export async function createOverlay({ stage, S }) {
     if (lens) { g.strokeStyle = "rgba(255,255,255,.85)"; g.lineWidth = 2; g.beginPath(); g.arc(lens.x, lens.y, lens.r, 0, 6.3); g.stroke(); }
     if (S.labels) drawLabels(g, lens);
     if (S.showdata) {
-      if (face) { g.fillStyle = "rgba(127,255,170,.85)"; for (const p of face) if (p) g.fillRect((1 - p.x) * W - 1, p.y * H - 1, 2, 2); }
+      if (face) { g.fillStyle = "rgba(127,255,170,.85)"; for (const p of face) if (p) g.fillRect(fx(p.x * W) - 1, p.y * H - 1, 2, 2); }
       g.strokeStyle = "rgba(255,183,3,.9)"; g.fillStyle = "#ffb703"; g.lineWidth = 1.5;
       for (const lms of handList) {
         for (const chain of [[0, 1, 2, 3, 4], [0, 5, 6, 7, 8], [5, 9, 10, 11, 12], [9, 13, 14, 15, 16], [13, 17, 18, 19, 20], [0, 17]]) {
-          g.beginPath(); chain.forEach((i, k) => { const x = (1 - lms[i].x) * W, y = lms[i].y * H; k ? g.lineTo(x, y) : g.moveTo(x, y); }); g.stroke();
+          g.beginPath(); chain.forEach((i, k) => { const x = fx(lms[i].x * W), y = lms[i].y * H; k ? g.lineTo(x, y) : g.moveTo(x, y); }); g.stroke();
         }
-        for (const p of lms) { g.beginPath(); g.arc((1 - p.x) * W, p.y * H, 3, 0, 6.3); g.fill(); }
+        for (const p of lms) { g.beginPath(); g.arc(fx(p.x * W), p.y * H, 3, 0, 6.3); g.fill(); }
       }
       if (now - dataAt > 120) { dataAt = now; document.getElementById("data").textContent = readout(face, handList, rightSides); }
     }
@@ -533,5 +543,5 @@ export async function createOverlay({ stage, S }) {
     return { matrix: m.elements, lms, body: bodyLms, hands: [hand(16, 1), hand(15, -1)], sides: [true, false] };
   }
 
-  return { setHead, loseHead, render, applyStyle, resize, demoFace, get size() { return { W, H }; }, get headFound() { return pose.found; } };
+  return { setHead, loseHead, setView, render, applyStyle, resize, demoFace, get size() { return { W, H }; }, get headFound() { return pose.found; } };
 }

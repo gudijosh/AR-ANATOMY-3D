@@ -199,16 +199,23 @@ export async function createBody({ scene, material }) {
           const t = THREE.MathUtils.smoothstep(at.pt[1], 0, 0.85);
           A4.copy(L3).applyMatrix4(s.matrix); B4.copy(L3).applyMatrix4(s.hip); L3.lerpVectors(B4, A4, t);
         } else L3.applyMatrix4(s.matrix);
-        const x = W_() - L3.x, y = H_() - L3.y;
+        const x = X_(L3.x), y = H_() - L3.y;
         if (lens && Math.hypot(x - lens.x, y - lens.y) > lens.r) continue;
         items.push({ text: translate(l.t), color: inkOf(l.layer), ax: x, ay: y });
         break;   // one anchor per structure
       }
     }
-    return { items, cx: W_() - torsoCenterX, half: torsoHalf * 1.15 };
+    return { items, cx: X_(torsoCenterX), half: torsoHalf * 1.15 };
   }
-  let W_ = () => 640, H_ = () => 480;
-  function setSize(getW, getH) { W_ = getW; H_ = getH; }
+  let W_ = () => 640, H_ = () => 480, X_ = x => W_() - x;   // X_: picture x to heads-up x (turned when the view is flipped)
+  function setSize(getW, getH, toScreenX) { W_ = getW; H_ = getH; if (toScreenX) X_ = toScreenX; }
+  // forget the person: the next one in view is measured afresh (another camera, another body)
+  function reset() {
+    found = false; lostAt = 0; lastUpdate = 0; haveScale = false; frontRatio = 0; frontRatioT = 0; turnCos = 1; deadRef = 0; steady = null;
+    for (const s of Object.values(segs)) { s.group.visible = false; s.on = false; }
+    for (const i of POSE_IDS) { filt[i].reset(); fresh[i] = true; vis[i] = 0; }
+    scaleF.reset(); ratioF.reset(); ratioTF.reset(); sideF.reset();
+  }
 
   // a dark veil over the real body from the tracker's person mask, so the anatomy reads clearly
   const maskCanvas = document.createElement("canvas");
@@ -226,5 +233,5 @@ export async function createBody({ scene, material }) {
     g.restore();
   }
 
-  return { update, apply, eachMaterial, labelItems, setSize, drawVeil, get found() { return found; } };
+  return { update, apply, eachMaterial, labelItems, setSize, reset, drawVeil, get found() { return found; } };
 }
