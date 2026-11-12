@@ -215,7 +215,8 @@ export async function createOverlay({ stage, S }) {
     if (Math.abs(e[12]) + Math.abs(e[13]) + Math.abs(e[14]) < 1e-6 && Math.abs(e[3]) + Math.abs(e[7]) + Math.abs(e[11]) > 1e-3) M.transpose();
     M.decompose(P3, Q, Sz);
     const now = performance.now();
-    if (!pose.found) {
+    // first sight, or a long pause between frames (tab in the background): start the smoothing afresh
+    if (!pose.found || now - headF.lastRot > 300) {
       pose.pos.copy(P3); pose.rot.copy(Q); pose.size.copy(Sz); pose.k = 1; pose.dx = pose.dy = 0;
       headF.pos.reset(); headF.k.reset(); headF.dx.reset(); headF.dy.reset(); headF.pos.filter(P3.clone(), now); headF.lastRot = now;
     } else {
@@ -307,7 +308,8 @@ export async function createOverlay({ stage, S }) {
   }
   function setHand(rig, lms, isRight) {
     if (!rig.pts) { rig.pts = lms.map(() => new THREE.Vector3()); rig.filt = lms.map(() => new OneEuro3(1.4, 0.02, 0.5, 0.004)); }
-    const fresh = !rig.group.visible, now = performance.now();
+    const now = performance.now(), fresh = !rig.group.visible || now - (rig.lastT || 0) > 300;   // reappeared, or a long pause
+    rig.lastT = now;
     if (fresh) for (const f of rig.filt) f.reset();
     lms.forEach((p, i) => { T.set(p.x * W, (1 - p.y) * H, -p.z * W * 0.6); rig.pts[i].copy(rig.filt[i].filter(T, now)); });
     const P = rig.pts, sign = isRight ? 1 : -1;

@@ -63,7 +63,8 @@ export async function createBody({ scene, material }) {
   // how far the torso is turned: its shoulders look narrower than when it faces the camera, measured against the
   // face's size (which doesn't change when only the body turns); the normal front-on proportion is learnt as it goes
   const ratioF = new OneEuro(0.6, 0), sideF = new OneEuro(0.4, 0), rawZ = {};
-  let frontRatio = 0, turnSide = 1, turnCos = 1;
+  let frontRatio = 0, turnSide = 1, turnCos = 1, lastUpdate = 0;
+  const GAP_MS = 300;
   function update(lms, W, H, now = performance.now(), headRef = 0) {
     if (!lms) {   // keep the last pose for a moment, so a single missed frame doesn't make it blink
       if (found && now - lostAt > 400) { found = false; for (const s of Object.values(segs)) s.group.visible = false; for (const i of POSE_IDS) { filt[i].reset(); fresh[i] = true; } scaleF.reset(); deadRef = 0; }
@@ -71,6 +72,13 @@ export async function createBody({ scene, material }) {
       return;
     }
     lostAt = 0;
+    // a long pause between frames (the tab was in the background, or the page was busy): start the smoothing afresh
+    // from what the tracker sees now, instead of easing for seconds from stale values (which swelled the body)
+    if (lastUpdate && now - lastUpdate > GAP_MS) {
+      for (const i of POSE_IDS) { filt[i].reset(); fresh[i] = true; }
+      scaleF.reset(); ratioF.reset(); sideF.reset();
+    }
+    lastUpdate = now;
     for (const i of POSE_IDS) {
       const p = lms[i]; if (!p) continue;
       const v = p.visibility === undefined ? 1 : p.visibility;
