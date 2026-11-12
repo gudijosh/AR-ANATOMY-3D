@@ -7,7 +7,11 @@ const $ = id => document.getElementById(id);
 const statusEl = $("status"), video = $("video"), stage = $("stage");
 // the status is kept as a message key, so it can be shown again in the other language
 let statusNow = { key: "st.idle", vars: null, cls: "" };
-const drawStatus = () => { statusEl.textContent = t(statusNow.key, statusNow.vars); statusEl.className = statusNow.cls || ""; };
+// it only shows while something is loading or needs the person's attention; while all is well it stays out of the way
+const drawStatus = () => {
+  statusEl.textContent = t(statusNow.key, statusNow.vars); statusEl.className = statusNow.cls || "";
+  $("toast").hidden = statusNow.cls === "ok" || statusNow.key === "st.idle";
+};
 const setStatus = (key, cls, vars) => { statusNow = { key, vars: vars || null, cls }; drawStatus(); };
 
 const VISION_VERSION = "0.10.14";
@@ -233,7 +237,7 @@ function runLive() {
           const mk = pr.segmentationMasks && pr.segmentationMasks[0];
           const mask = mk ? { data: Float32Array.from(mk.getAsFloat32Array()), width: mk.width, height: mk.height } : null;
           if (mk && mk.close) mk.close();
-          bodyPose = { lms: pr.landmarks[0], mask };
+          bodyPose = { lms: pr.landmarks[0], world: pr.worldLandmarks && pr.worldLandmarks[0], mask };
           if (PHOTO) window.__bodyPose = bodyPose.lms;   // test mode only: lets a test read the raw points
         }
       } else bodyPose = null;
@@ -261,14 +265,16 @@ function runDemo() {
   if (params.get("style")) { S.style = params.get("style"); showSettings(); overlay.applyStyle(); }
   if (params.has("labels")) { S.labels = true; showSettings(); }
   if (params.get("lang")) setLang(params.get("lang"));
+  // test settings: ?turn=1.5 makes the pretend body turn further (radians), ?noface hides the face from the body's sizing
+  const turn = parseFloat(params.get("turn")) || undefined, noface = params.has("noface");
   const tick = () => {
     requestAnimationFrame(tick);   // a still scene keeps redrawing the same moment
     const now = performance.now(), time = still ? 1.2 : now / 1000;
     const { W, H } = overlay.size;
     const far = bodyActive();   // with body layers on, the pretend camera steps back to show the whole body
-    const f = overlay.demoFace(time, far);
+    const f = overlay.demoFace(time, far, turn);
     overlay.setHead(f.matrix, f.lms, 0.5 + 0.5 * Math.sin(time * 1.3));
-    if (far) { overlay.render(now, f.lms, f.hands, f.sides, pointer, { lms: f.body }); return; }
+    if (far) { overlay.render(now, noface ? null : f.lms, f.hands, f.sides, pointer, { lms: f.body }); return; }
     const ky = 0.021, kx = ky * H / W, curl = 0.5 + 0.5 * Math.sin(time * 0.9);
     const pts = DEMO_HAND.map(([x, y, z], i) => {
       const joint = i % 4 === 0 && i ? 2 : i % 4 === 3 ? 1.2 : i % 4 === 2 ? 0.6 : 0;   // fingertips bend most
@@ -292,7 +298,7 @@ $("start").addEventListener("click", async () => {
       : await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false,
       });
-    video.srcObject = stream;
+    video.srcObject = stream; video.hidden = false;
     await Promise.race([video.play(), new Promise(r => setTimeout(r, 2500))]);   // some browsers never settle play() for a still stream
     if (video.videoWidth && video.videoHeight) stage.style.setProperty("--ar", (video.videoWidth / video.videoHeight).toFixed(4));
     $("intro").hidden = true;
@@ -307,7 +313,7 @@ $("start").addEventListener("click", async () => {
     runLive();
   } catch (err) {
     $("start").disabled = false;
-    $("intro").hidden = false;
+    $("intro").hidden = false; video.hidden = true;
     const denied = err && (err.name === "NotAllowedError" || err.name === "SecurityError");
     if (denied) setStatus("st.blocked", "bad");
     else setStatus("st.loadFailed", "bad", { step: t(step), msg: err && err.message ? err.message : String(err) });
