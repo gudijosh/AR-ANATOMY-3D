@@ -2,43 +2,58 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#08080a">
 <title>AR ANATOMY 3D</title>
 <link rel="icon" href="data:,">
-  <script type="module" crossorigin src="./assets/index-Okl46iZb.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-BoV85K3V.css">
+  <script type="module" crossorigin src="./assets/index-hzrDy9e_.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-3vXEx4Rv.css">
 </head>
 <body>
+<div class="viewport" id="viewport">
+  <div class="stage" id="stage">
+    <video id="video" playsinline muted autoplay></video>
+    <canvas id="shade"></canvas>
+    <canvas id="gl"></canvas>
+    <canvas id="hud"></canvas>
+  </div>
+</div>
+
 <header class="top">
   <h1 data-i18n="title">AR ANATOMY 3D</h1>
-  <div class="top-right">
-    <div class="status"><span class="dot" aria-hidden="true"></span><div id="status">Click Start camera, then allow the camera.</div></div>
-    <div class="lang" role="group" data-i18n-aria="lang.group" aria-label="Language">
-      <button type="button" data-lang="en" lang="en" aria-label="English">EN</button>
-      <button type="button" data-lang="es" lang="es" aria-label="Español">ES</button>
-    </div>
+  <div class="status"><span class="dot" aria-hidden="true"></span><div id="status">Click Start camera, then allow the camera.</div></div>
+  <div class="lang" role="group" data-i18n-aria="lang.group" aria-label="Language">
+    <button type="button" data-lang="en" lang="en" aria-label="English">EN</button>
+    <button type="button" data-lang="es" lang="es" aria-label="Español">ES</button>
   </div>
 </header>
 
-<div class="layout">
-  <main class="stage-col">
-    <div class="stage" id="stage">
-      <video id="video" playsinline muted autoplay></video>
-      <canvas id="shade"></canvas>
-      <canvas id="gl"></canvas>
-      <canvas id="hud"></canvas>
-      <div id="intro">
-        <h2 data-i18n="intro.h">See inside.</h2>
-        <p data-i18n="intro.p">Watch the skull, brain and muscles move inside your own head, live through your camera. Hold up a hand to see its bones.</p>
-        <button class="big" id="start" type="button" data-i18n="start">Start camera</button>
-      </div>
-    </div>
-    <p class="note" data-i18n="note">Processed on this device, never uploaded. A real 3D dataset of one adult, fitted to your head: not a scan of you and not a medical tool.</p>
-  </main>
+<div id="intro">
+  <h2 data-i18n="intro.h">See inside.</h2>
+  <p data-i18n="intro.p">Watch the skull, brain and muscles move inside your own head, live through your camera. Hold up a hand to see its bones.</p>
+  <button class="big" id="start" type="button" data-i18n="start">Start camera</button>
+  <p class="note" data-i18n="note">Processed on this device, never uploaded. A real 3D dataset of one adult, fitted to your head: not a scan of you and not a medical tool.</p>
+</div>
 
-  <aside>
+<nav class="dock" data-i18n-aria="menu.group" aria-label="Menu">
+  <button type="button" class="dock-btn" data-sheet="sheet-view" aria-expanded="false" aria-controls="sheet-view">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></svg>
+    <span data-i18n="menu.view">What to see</span>
+  </button>
+  <button type="button" class="dock-btn" data-sheet="sheet-settings" aria-expanded="false" aria-controls="sheet-settings">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
+    <span data-i18n="menu.settings">Settings</span>
+  </button>
+</nav>
+
+<section class="sheet" id="sheet-view" role="dialog" aria-labelledby="sheet-view-h" hidden>
+  <div class="sheet-head">
+    <h2 id="sheet-view-h" data-i18n="menu.view">What to see</h2>
+    <button type="button" class="sheet-close" data-i18n-aria="close" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
+  <div class="sheet-body">
     <section class="group">
-      <h3 data-i18n="h.layers">Layers</h3>
+      <h3 data-i18n="h.quick">Quick picks</h3>
       <div class="chips">
         <button type="button" data-preset="head" data-i18n="p.head">Head</button>
         <button type="button" data-preset="skeleton" data-i18n="p.skeleton">Skeleton</button>
@@ -46,10 +61,23 @@
         <button type="button" data-preset="muscles" data-i18n="p.muscles">Muscles</button>
         <button type="button" data-preset="all" data-i18n="p.all">Everything</button>
       </div>
-      <div class="cats" id="cats"></div>
-      <label class="ck"><span data-i18n="labels">Show labels</span><input type="checkbox" id="labels"></label>
     </section>
+    <section class="group">
+      <h3 data-i18n="h.layers">Layers</h3>
+      <div class="cats" id="cats"></div>
+      </section>
+    <section class="group">
+      <label class="tile wide"><input type="checkbox" id="labels"><i style="--c:#ffffff"></i><span data-i18n="labels">Show labels</span></label>
+    </section>
+  </div>
+</section>
 
+<section class="sheet" id="sheet-settings" role="dialog" aria-labelledby="sheet-settings-h" hidden>
+  <div class="sheet-head">
+    <h2 id="sheet-settings-h" data-i18n="menu.settings">Settings</h2>
+    <button type="button" class="sheet-close" data-i18n-aria="close" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
+  <div class="sheet-body">
     <section class="group">
       <h3 data-i18n="h.look">Look</h3>
       <div class="seg" id="style">
@@ -92,8 +120,11 @@
       <button class="linkbtn" id="fitreset" type="button" data-i18n="reset" data-i18n-aria="reset" aria-label="Reset fit">Reset fit</button>
     </details>
 
-    <p class="small credit" data-i18n="credit">Anatomy models: BodyParts3D, © The Database Center for Life Science, licensed under CC Attribution-Share Alike 2.1 Japan. Simplified and re-aligned; face muscles modelled on its skull.</p>
-  </aside>
-</div>
+    <section class="group about">
+      <p class="small" data-i18n="note">Processed on this device, never uploaded. A real 3D dataset of one adult, fitted to your head: not a scan of you and not a medical tool.</p>
+      <p class="small credit" data-i18n="credit">Anatomy models: BodyParts3D, © The Database Center for Life Science, licensed under CC Attribution-Share Alike 2.1 Japan. Simplified and re-aligned; face muscles modelled on its skull.</p>
+    </section>
+  </div>
+</section>
 </body>
 </html>

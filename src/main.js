@@ -55,33 +55,43 @@ const STORE = "ar-anatomy-3d-settings";
 const LAYERS = CATEGORIES.flatMap(c => c.items.map(i => i[0]));
 const bodyActive = () => BODY_KEYS.some(k => S[k]);
 
-// the side panel's categories: a header that opens the list, a switch for the whole category, then one switch per part
+// the "what to see" menu: one section per category, with a switch for the whole section and a big tile per part
 (function buildCategories() {
   const host = $("cats");
   for (const c of CATEGORIES) {
     const wrap = document.createElement("div");
     wrap.className = "cat"; wrap.dataset.cat = c.id;
     wrap.innerHTML = `<div class="cat-head">
-        <button type="button" class="cat-toggle" aria-expanded="false" aria-controls="cat-${c.id}">
-          <i style="--c:${c.dot}"></i><span data-i18n="cat.${c.id}"></span><span class="cat-count" id="cnt-${c.id}"></span>
-          <svg class="chev" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </button>
-        <input type="checkbox" class="cat-all" id="all-${c.id}" data-i18n-aria="cat.all.${c.id}">
+        <h4><i style="--c:${c.dot}"></i><span data-i18n="cat.${c.id}"></span></h4><span class="cat-count" id="cnt-${c.id}"></span>
+        <label class="cat-all"><span data-i18n="all"></span><input type="checkbox" id="all-${c.id}" data-i18n-aria="cat.all.${c.id}"></label>
       </div>
-      <div class="cat-body" id="cat-${c.id}" hidden><div class="checks">${c.items.map(([k, col]) =>
-        `<label class="ck"><i style="--c:${col}"></i><span data-i18n="l.${k}"></span><input type="checkbox" id="L_${k}"></label>`).join("")}</div></div>`;
+      <div class="tiles">${c.items.map(([k, col]) =>
+        `<label class="tile"><input type="checkbox" id="L_${k}"><i style="--c:${col}"></i><span data-i18n="l.${k}"></span></label>`).join("")}</div>`;
     host.appendChild(wrap);
-    const btn = wrap.querySelector(".cat-toggle"), body = wrap.querySelector(".cat-body");
-    btn.addEventListener("click", () => {
-      const open = btn.getAttribute("aria-expanded") !== "true";
-      btn.setAttribute("aria-expanded", String(open)); body.hidden = !open; wrap.classList.toggle("open", open);
-    });
-    wrap.querySelector(".cat-all").addEventListener("change", e => {
+    $("all-" + c.id).addEventListener("change", e => {
       for (const [k] of c.items) S[k] = e.target.checked;
       save(); showSettings();
     });
   }
 })();
+
+// pop-up menus: one open at a time; the dock button, the close button, Escape or a tap outside closes it
+const sheets = [...document.querySelectorAll(".sheet")], dockBtns = [...document.querySelectorAll("[data-sheet]")];
+function openSheet(id, focus) {
+  for (const sh of sheets) sh.hidden = sh.id !== id;
+  for (const b of dockBtns) b.setAttribute("aria-expanded", String(b.dataset.sheet === id));
+  if (id && focus) $(id).querySelector(".sheet-close").focus({ preventScroll: true });
+}
+const openId = () => (sheets.find(sh => !sh.hidden) || {}).id || null;
+for (const b of dockBtns) b.addEventListener("click", e => openSheet(openId() === b.dataset.sheet ? null : b.dataset.sheet, e.detail === 0));
+for (const sh of sheets) sh.querySelector(".sheet-close").addEventListener("click", () => {
+  openSheet(null); dockBtns.find(b => b.dataset.sheet === sh.id)?.focus({ preventScroll: true });
+});
+document.addEventListener("keydown", e => {
+  const id = openId();
+  if (e.key === "Escape" && id) { openSheet(null); dockBtns.find(b => b.dataset.sheet === id)?.focus({ preventScroll: true }); }
+});
+document.addEventListener("pointerdown", e => { if (openId() && !e.target.closest(".sheet, .dock, .top")) openSheet(null); });
 function showCategories() {
   for (const c of CATEGORIES) {
     const on = c.items.filter(([k]) => S[k]).length, all = $("all-" + c.id);
