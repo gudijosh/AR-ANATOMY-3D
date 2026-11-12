@@ -70,6 +70,8 @@ export async function createBody({ scene, material }) {
   let frontRatio = 0, frontRatioT = 0, haveScale = false, turnSide = 1, turnCos = 1, lastUpdate = 0;
   let shOn = false;
   const LIMB_SPAN = 1;   // a limb segment's joints are one segment length apart
+  const J = meta.joints, FOOT_CM = Math.hypot(J[31][0] - J[29][0], J[31][1] - J[29][1], J[31][2] - J[29][2]);   // heel to toes
+  const fx3 = new THREE.Vector3(), fu3 = new THREE.Vector3();
   const GAP_MS = 300;
   function update(lms, W, H, now = performance.now(), headRef = 0, world = null) {
     if (!lms) {   // keep the last pose for a moment, so a single missed frame doesn't make it blink
@@ -87,7 +89,9 @@ export async function createBody({ scene, material }) {
     lastUpdate = now;
     for (const i of POSE_IDS) {
       const p = lms[i]; if (!p) continue;
-      const v = p.visibility === undefined ? 1 : p.visibility;
+      // a point outside the picture is a guess, however sure the tracker says it is: it counts as not seen
+      const inside = p.x > -0.03 && p.x < 1.03 && p.y > -0.03 && p.y < 1.03;
+      const v = !inside ? 0 : p.visibility === undefined ? 1 : p.visibility;
       vis[i] += (v - vis[i]) * 0.3;
       rawZ[i] = p.z || 0;
       if (found && v < 0.3) continue;   // a point the camera can't see keeps its last place instead of jumping
@@ -102,7 +106,21 @@ export async function createBody({ scene, material }) {
     if (window.__bodyPose) window.__bodyDrawn = POSE_IDS.map(i => [i, P[i].x, P[i].y]);   // test mode only
     // Shoulders in view: the whole body is placed from the torso. Shoulders out of view (the camera is on someone's
     // legs or feet, or on an arm): only the limbs are drawn, sized from the limbs themselves.
-    shOn = showOrHide(shOn, Math.min(vis[11], vis[12]));
+    // The size the legs and feet say the body has. When the camera is close on a leg or a foot the tracker still
+    // guesses a whole small body squeezed into the picture; a torso far smaller than the legs call for is that guess,
+    // not a real torso, and is left out (it used to put a spine and ribs across the foot).
+    let legScale = 0;
+    for (const s of Object.values(segs)) {
+      if (s.kind !== "limb" || s.a < 23 || Math.min(vis[s.a], vis[s.b]) < 0.6) continue;
+      legScale = Math.max(legScale, Math.hypot(P[s.b].x - P[s.a].x, P[s.b].y - P[s.a].y) / s.len);
+    }
+    for (const [heel, toe] of [[29, 31], [30, 32]]) if (Math.min(vis[heel], vis[toe]) >= 0.6)
+      legScale = Math.max(legScale, Math.hypot(P[toe].x - P[heel].x, P[toe].y - P[heel].y) / FOOT_CM);
+    let torsoScale = Math.hypot(P[11].x - P[12].x, P[11].y - P[12].y) / meta.shoulderW;
+    if (Math.min(vis[23], vis[24]) > 0.5) torsoScale = Math.max(torsoScale,
+      Math.hypot((P[11].x + P[12].x - P[23].x - P[24].x) / 2, (P[11].y + P[12].y - P[23].y - P[24].y) / 2) / meta.torsoH);
+    const torsoReal = !(legScale > 0 && torsoScale < legScale * (shOn ? 0.5 : 0.62));
+    shOn = torsoReal && showOrHide(shOn, Math.min(vis[11], vis[12]));
     if (shOn) {
       // one steady body scale (pixels per cm)
       e1.subVectors(P[11], P[12]);
@@ -156,12 +174,14 @@ export async function createBody({ scene, material }) {
       torsoCenterX = mid.x; torsoHalf = Math.max(e1.length(), fullW * 0.5) / 2;
     } else {
       // a limb only ever looks shorter than it is (pointing at the camera), so the longest-looking one gives the size
-      let limbScale = 0, sx = 0, cnt = 0;
+      let limbScale = legScale, sx = 0, cnt = 0;
       for (const s of Object.values(segs)) {
-        if (s.kind !== "limb" || s.ref === "up" || Math.min(vis[s.a], vis[s.b]) < 0.6) continue;
-        limbScale = Math.max(limbScale, Math.hypot(P[s.b].x - P[s.a].x, P[s.b].y - P[s.a].y) / (s.len * LIMB_SPAN));
+        if (s.kind !== "limb" || Math.min(vis[s.a], vis[s.b]) < 0.6) continue;
+        if (s.ref !== "up") limbScale = Math.max(limbScale, Math.hypot(P[s.b].x - P[s.a].x, P[s.b].y - P[s.a].y) / (s.len * LIMB_SPAN));
         sx += P[s.a].x + P[s.b].x; cnt += 2;
       }
+      // with the torso left out, the arms the tracker guessed along with it go too
+      if (!torsoReal) for (const i of [11, 12, 13, 14, 15, 16]) vis[i] = 0;
       if (limbScale > 0) { pxPerCm = scaleF.filter(haveScale ? Math.max(limbScale, pxPerCm * 0.995) : limbScale, now); haveScale = true; }
       else if (!haveScale) { for (const s of Object.values(segs)) s.on = false; return; }   // nothing to size the body from yet
       deadRef = pxPerCm * meta.shoulderW; turnCos = 1;
@@ -173,7 +193,22 @@ export async function createBody({ scene, material }) {
       if (s.kind !== "limb") continue;
       const a = P[s.a], b = P[s.b];
       X.subVectors(b, a);
-      const ref = s.ref === "up" ? up : front, xh = X.clone().normalize();
+      let ref = s.ref === "up" ? up : front;
+      // A foot is rigid and is seen from any side (from the front standing, from above looking down at your own):
+      // its real direction in space comes from the tracker's 3D points (ankle, heel, toes), so the toes fan out the
+      // right way instead of being drawn side-on over each other.
+      const heel = s.a + 2, wa = world && world[s.a], wb = world && world[s.b], wh = world && world[heel];
+      if (s.ref === "up" && wa && wb && wh && Math.min(vis[s.a], vis[s.b], vis[heel]) > 0.5) {
+        const f = s.foot || (s.foot = { x: new THREE.Vector3(), up: new THREE.Vector3(), set: false });
+        fx3.set(wb.x - wa.x, -(wb.y - wa.y), -(wb.z - wa.z)).normalize();      // ankle to toes (picture axes: y up, z to the camera)
+        fu3.set(wa.x - wh.x, -(wa.y - wh.y), -(wa.z - wh.z)).normalize();      // heel to ankle: the foot's own "up"
+        if (!f.set || now - (f.t || 0) > GAP_MS) { f.x.copy(fx3); f.up.copy(fu3); f.set = true; }
+        else { f.x.lerp(fx3, 0.2).normalize(); f.up.lerp(fu3, 0.2).normalize(); }
+        f.t = now;
+        X.copy(f.x).multiplyScalar(s.len * pxPerCm);   // its true length; pointing at the camera it simply looks shorter
+        ref = f.up;
+      }
+      const xh = X.clone().normalize();
       Y.copy(ref).addScaledVector(xh, -ref.dot(xh));
       if (Y.lengthSq() < 1e-6) Y.set(1, 0, 0).addScaledVector(xh, -xh.x);
       Y.normalize(); Z.crossVectors(xh, Y);

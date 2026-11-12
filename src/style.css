@@ -361,7 +361,8 @@ details.fold summary:focus-visible { outline: 2px solid #fff; outline-offset: 2p
 .sheet .cat-count { font-size: 11px; }
 .sheet .chev .ico { width: 14px; height: 14px; }
 .sheet .cat-inner .tiles { padding: 0 4px 5px; }
-.sheet .cat-all { justify-content: space-between; padding: 3px 8px 6px 10px; font-size: 12px; }
+/* the switch sits at the left, away from the arrow that opens the section */
+.sheet .cat-all { justify-content: flex-start; gap: 8px; padding: 3px 8px 6px 8px; font-size: 12px; }
 .sheet .cat-all input { width: 36px; height: 21px; }
 .sheet .cat-all input::after { width: 17px; height: 17px; }
 .sheet .cat-all input:checked::after { transform: translateX(15px); }

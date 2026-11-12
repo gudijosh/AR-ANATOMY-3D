@@ -76,7 +76,7 @@ const bodyActive = () => BODY_KEYS.some(k => S[k]);
         </button>
       </div>
       <div class="cat-body" id="cat-${c.id}"><div class="cat-inner">
-        <label class="cat-all"><span data-i18n="all"></span><input type="checkbox" id="all-${c.id}" data-i18n-aria="cat.all.${c.id}"></label>
+        <label class="cat-all"><input type="checkbox" id="all-${c.id}" data-i18n-aria="cat.all.${c.id}"><span data-i18n="all"></span></label>
         <div class="tiles">${c.items.map(([k, col]) =>
         `<label class="tile"><input type="checkbox" id="L_${k}"><span class="ic" style="--c:${col}">${icon(k)}</span><span data-i18n="l.${k}"></span></label>`).join("")}</div></div></div>`;
     host.appendChild(wrap);
@@ -280,7 +280,7 @@ function runDemo() {
     if (far) {
       // ?legs: the shoulders and arms are out of the picture; ?nobody: the body tracker sees nothing (hands only)
       if (params.has("legs")) for (const i of [11, 12, 13, 14, 15, 16]) f.body[i].visibility = 0;
-      overlay.render(now, noface ? null : f.lms, f.hands, f.sides, pointer, params.has("nobody") ? null : { lms: f.body });
+      overlay.render(now, noface ? null : f.lms, f.hands, f.sides, pointer, params.has("nobody") ? null : { lms: f.body, world: params.has("noworld") ? null : f.world });
       return;
     }
     const ky = 0.021, kx = ky * H / W, curl = 0.5 + 0.5 * Math.sin(time * 0.9);
