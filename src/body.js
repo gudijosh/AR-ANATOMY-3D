@@ -68,6 +68,8 @@ export async function createBody({ scene, material }) {
   const ratioF = new OneEuro(0.6, 0), ratioTF = new OneEuro(0.6, 0), sideF = new OneEuro(0.4, 0), rawZ = {};
   const HEAD_RATIO = [2.6, 4.8], TORSO_K = meta.shoulderW / meta.torsoH, TORSO_RATIO = [TORSO_K * 0.75, TORSO_K * 1.3];
   let frontRatio = 0, frontRatioT = 0, haveScale = false, turnSide = 1, turnCos = 1, lastUpdate = 0;
+  let shOn = false;
+  const LIMB_SPAN = 1;   // a limb segment's joints are one segment length apart
   const GAP_MS = 300;
   function update(lms, W, H, now = performance.now(), headRef = 0, world = null) {
     if (!lms) {   // keep the last pose for a moment, so a single missed frame doesn't make it blink
@@ -98,56 +100,75 @@ export async function createBody({ scene, material }) {
     }
     found = true;
     if (window.__bodyPose) window.__bodyDrawn = POSE_IDS.map(i => [i, P[i].x, P[i].y]);   // test mode only
-    // one steady body scale (pixels per cm)
-    e1.subVectors(P[11], P[12]);
-    const flatW = Math.hypot(e1.x, e1.y);
-    shMid.addVectors(P[11], P[12]).multiplyScalar(0.5);
-    const hipSeen = THREE.MathUtils.clamp((Math.min(vis[23], vis[24]) - 0.6) / 0.25, 0, 1);   // half-hidden hips wander: trust them only when clearly seen
-    let sum = 0, n = 0;
-    if (headRef > 1) {   // from the face
-      const r = ratioF.filter(flatW / headRef, now);
-      frontRatio = THREE.MathUtils.clamp(Math.max(r, frontRatio * 0.9997), HEAD_RATIO[0], HEAD_RATIO[1]);   // widest seen = facing the camera (slowly forgotten)
-      sum += headRef * frontRatio / meta.shoulderW; n++;
-    }
-    if (hipSeen > 0.5) {   // from the torso's height
-      const torsoLen = Math.hypot(shMid.x - (P[23].x + P[24].x) / 2, shMid.y - (P[23].y + P[24].y) / 2);
-      if (torsoLen > 1) {
-        const r = ratioTF.filter(flatW / torsoLen, now);
-        frontRatioT = THREE.MathUtils.clamp(Math.max(r, frontRatioT * 0.9997), TORSO_RATIO[0], TORSO_RATIO[1]);
-        sum += torsoLen * frontRatioT / meta.shoulderW; n++;
+    // Shoulders in view: the whole body is placed from the torso. Shoulders out of view (the camera is on someone's
+    // legs or feet, or on an arm): only the limbs are drawn, sized from the limbs themselves.
+    shOn = showOrHide(shOn, Math.min(vis[11], vis[12]));
+    if (shOn) {
+      // one steady body scale (pixels per cm)
+      e1.subVectors(P[11], P[12]);
+      const flatW = Math.hypot(e1.x, e1.y);
+      shMid.addVectors(P[11], P[12]).multiplyScalar(0.5);
+      const hipSeen = THREE.MathUtils.clamp((Math.min(vis[23], vis[24]) - 0.6) / 0.25, 0, 1);   // half-hidden hips wander: trust them only when clearly seen
+      let sum = 0, n = 0;
+      if (headRef > 1) {   // from the face
+        const r = ratioF.filter(flatW / headRef, now);
+        frontRatio = THREE.MathUtils.clamp(Math.max(r, frontRatio * 0.9997), HEAD_RATIO[0], HEAD_RATIO[1]);   // widest seen = facing the camera (slowly forgotten)
+        sum += headRef * frontRatio / meta.shoulderW; n++;
       }
+      if (hipSeen > 0.5) {   // from the torso's height
+        const torsoLen = Math.hypot(shMid.x - (P[23].x + P[24].x) / 2, shMid.y - (P[23].y + P[24].y) / 2);
+        if (torsoLen > 1) {
+          const r = ratioTF.filter(flatW / torsoLen, now);
+          frontRatioT = THREE.MathUtils.clamp(Math.max(r, frontRatioT * 0.9997), TORSO_RATIO[0], TORSO_RATIO[1]);
+          sum += torsoLen * frontRatioT / meta.shoulderW; n++;
+        }
+      }
+      const flatScale = flatW / meta.shoulderW;   // the least it can be: turning only ever narrows the shoulders
+      const target = Math.max(flatScale, n ? sum / n : haveScale ? pxPerCm : flatScale);
+      pxPerCm = scaleF.filter(target, now); haveScale = true;
+      const fullW = pxPerCm * meta.shoulderW;   // the shoulders' real width in pixels
+      turnCos = THREE.MathUtils.clamp(flatW / fullW, 0.08, 1);
+      // which way: only the averaged sign of the tracker's depth (which shoulder is nearer), never its noisy size;
+      // the tracker's metric 3D points are steadier for this than the picture ones
+      const dz = world && world[11] && world[12] ? ((world[12].z || 0) - (world[11].z || 0)) * 0.8 : (rawZ[12] || 0) - (rawZ[11] || 0);
+      const side = sideF.filter(dz, now);
+      if (Math.abs(side) > 0.04) turnSide = Math.sign(side);
+      // small differences are measuring noise, not a turn: facing roughly forward the torso stays flat to the camera
+      const turned = 1 - THREE.MathUtils.smoothstep(turnCos, 0.84, 0.96);
+      e1.z = turnSide * turned * Math.sqrt(Math.max(0, fullW * fullW - flatW * flatW));   // the shoulder line in 3D
+      deadRef = fullW;   // shoulder width in pixels: the size of the dead zone scales with the body
+      // hips out of view (sitting at a desk): place them below the shoulders from the body's proportions;
+      // side-on the shoulder line is too short to give a direction, so "below" leans on straight down instead
+      down.set(e1.y, -e1.x, 0); if (down.y > 0) down.negate();
+      down.setLength(turnCos).y -= 1 - turnCos; down.normalize();
+      hipGuess.copy(shMid).addScaledVector(down, meta.torsoH * pxPerCm);
+      mid.addVectors(P[23], P[24]).multiplyScalar(0.5).lerp(hipGuess, 1 - hipSeen);
+      // torso: shoulder frame above, hip frame below (same width: the pelvis follows the shoulders' scale), blended in the shader
+      const T = segs.torso;
+      e2.subVectors(shMid, mid);
+      front.crossVectors(e1, e2).normalize(); up.copy(e2).normalize();   // turns with the torso, so organs show their depth from the side
+      e3.copy(front).multiplyScalar(pxPerCm * Math.sqrt(meta.shoulderW * meta.torsoH));
+      h1.subVectors(P[23], P[24]);
+      if (hipSeen < 0.5 || h1.lengthSq() < 1) h1.copy(e1); else { h1.z = 0; h1.setLength(flatW); h1.z = e1.z; }
+      T.matrix.makeBasis(e1, e2, e3).setPosition(mid);
+      T.hip.makeBasis(h1, e2, e3).setPosition(mid);
+      T.on = true;
+      torsoCenterX = mid.x; torsoHalf = Math.max(e1.length(), fullW * 0.5) / 2;
+    } else {
+      // a limb only ever looks shorter than it is (pointing at the camera), so the longest-looking one gives the size
+      let limbScale = 0, sx = 0, cnt = 0;
+      for (const s of Object.values(segs)) {
+        if (s.kind !== "limb" || s.ref === "up" || Math.min(vis[s.a], vis[s.b]) < 0.6) continue;
+        limbScale = Math.max(limbScale, Math.hypot(P[s.b].x - P[s.a].x, P[s.b].y - P[s.a].y) / (s.len * LIMB_SPAN));
+        sx += P[s.a].x + P[s.b].x; cnt += 2;
+      }
+      if (limbScale > 0) { pxPerCm = scaleF.filter(haveScale ? Math.max(limbScale, pxPerCm * 0.995) : limbScale, now); haveScale = true; }
+      else if (!haveScale) { for (const s of Object.values(segs)) s.on = false; return; }   // nothing to size the body from yet
+      deadRef = pxPerCm * meta.shoulderW; turnCos = 1;
+      front.set(0, 0, 1); up.set(0, 1, 0);
+      segs.torso.on = false;
+      if (cnt) torsoCenterX = sx / cnt; torsoHalf = deadRef / 2;
     }
-    const flatScale = flatW / meta.shoulderW;   // the least it can be: turning only ever narrows the shoulders
-    const target = Math.max(flatScale, n ? sum / n : haveScale ? pxPerCm : flatScale);
-    pxPerCm = scaleF.filter(target, now); haveScale = true;
-    const fullW = pxPerCm * meta.shoulderW;   // the shoulders' real width in pixels
-    turnCos = THREE.MathUtils.clamp(flatW / fullW, 0.08, 1);
-    // which way: only the averaged sign of the tracker's depth (which shoulder is nearer), never its noisy size;
-    // the tracker's metric 3D points are steadier for this than the picture ones
-    const dz = world && world[11] && world[12] ? ((world[12].z || 0) - (world[11].z || 0)) * 0.8 : (rawZ[12] || 0) - (rawZ[11] || 0);
-    const side = sideF.filter(dz, now);
-    if (Math.abs(side) > 0.04) turnSide = Math.sign(side);
-    // small differences are measuring noise, not a turn: facing roughly forward the torso stays flat to the camera
-    const turned = 1 - THREE.MathUtils.smoothstep(turnCos, 0.84, 0.96);
-    e1.z = turnSide * turned * Math.sqrt(Math.max(0, fullW * fullW - flatW * flatW));   // the shoulder line in 3D
-    deadRef = fullW;   // shoulder width in pixels: the size of the dead zone scales with the body
-    // hips out of view (sitting at a desk): place them below the shoulders from the body's proportions;
-    // side-on the shoulder line is too short to give a direction, so "below" leans on straight down instead
-    down.set(e1.y, -e1.x, 0); if (down.y > 0) down.negate();
-    down.setLength(turnCos).y -= 1 - turnCos; down.normalize();
-    hipGuess.copy(shMid).addScaledVector(down, meta.torsoH * pxPerCm);
-    mid.addVectors(P[23], P[24]).multiplyScalar(0.5).lerp(hipGuess, 1 - hipSeen);
-    // torso: shoulder frame above, hip frame below (same width: the pelvis follows the shoulders' scale), blended in the shader
-    const T = segs.torso;
-    e2.subVectors(shMid, mid);
-    front.crossVectors(e1, e2).normalize(); up.copy(e2).normalize();   // turns with the torso, so organs show their depth from the side
-    e3.copy(front).multiplyScalar(pxPerCm * Math.sqrt(meta.shoulderW * meta.torsoH));
-    h1.subVectors(P[23], P[24]);
-    if (hipSeen < 0.5 || h1.lengthSq() < 1) h1.copy(e1); else { h1.z = 0; h1.setLength(flatW); h1.z = e1.z; }
-    T.matrix.makeBasis(e1, e2, e3).setPosition(mid);
-    T.hip.makeBasis(h1, e2, e3).setPosition(mid);
-    T.on = showOrHide(T.on, Math.min(vis[11], vis[12]));
-    torsoCenterX = mid.x; torsoHalf = Math.max(e1.length(), fullW * 0.5) / 2;
     for (const s of Object.values(segs)) {
       if (s.kind !== "limb") continue;
       const a = P[s.a], b = P[s.b];
@@ -164,13 +185,30 @@ export async function createBody({ scene, material }) {
   // show a part once the camera clearly sees it, hide it only once it clearly doesn't (no flicker in between)
   const showOrHide = (on, v) => on ? v > 0.4 : v > 0.65;
 
+  // A hand seen by the hand tracker brings its forearm along when the body tracker isn't drawing that arm (the
+  // camera is close on a hand and wrist): the forearm runs on from the wrist, along the line of the hand.
+  const armFromHand = { farmR: null, farmL: null }, hx = new THREE.Vector3(), hy = new THREE.Vector3(), hz = new THREE.Vector3(), he = new THREE.Vector3();
+  function clearHandArms() { armFromHand.farmR = armFromHand.farmL = null; }
+  function setHandArm(isRight, wrist, dir, handPxPerCm) {
+    const key = isRight ? "farmR" : "farmL", s = segs[key];
+    if (!s || !(handPxPerCm > 0)) return;
+    const m = armFromHand[key] = armFromHand[key + "M"] || (armFromHand[key + "M"] = new THREE.Matrix4());
+    he.copy(wrist).addScaledVector(dir, s.len * handPxPerCm);   // the elbow
+    hx.subVectors(wrist, he);
+    const xh = hz.copy(hx).normalize();
+    hy.set(0, 0, 1).addScaledVector(xh, -xh.z); if (hy.lengthSq() < 1e-6) hy.set(1, 0, 0); hy.normalize();
+    const zz = new THREE.Vector3().crossVectors(xh, hy), thick = s.len * handPxPerCm;
+    m.makeBasis(hx, hy.multiplyScalar(thick), zz.multiplyScalar(thick)).setPosition(he);
+  }
+
   function apply(S, gainFor) {
     const solid = S.style === "solid";
     let any = false;
     for (const s of Object.values(segs)) {
-      s.group.visible = found && s.on;
+      const own = found && s.on, lent = !own && armFromHand[s.key];
+      s.group.visible = own || !!lent;
       for (const mesh of s.meshes) {
-        mesh.matrix.copy(s.matrix); mesh.matrixWorldNeedsUpdate = true;
+        mesh.matrix.copy(lent || s.matrix); mesh.matrixWorldNeedsUpdate = true;
         if (s.kind === "torso") { mesh.material.uniforms.uTorsoA.value.copy(s.matrix); mesh.material.uniforms.uTorsoB.value.copy(s.hip); }
       }
     }
@@ -211,7 +249,7 @@ export async function createBody({ scene, material }) {
   function setSize(getW, getH, toScreenX) { W_ = getW; H_ = getH; if (toScreenX) X_ = toScreenX; }
   // forget the person: the next one in view is measured afresh (another camera, another body)
   function reset() {
-    found = false; lostAt = 0; lastUpdate = 0; haveScale = false; frontRatio = 0; frontRatioT = 0; turnCos = 1; deadRef = 0; steady = null;
+    found = false; shOn = false; lostAt = 0; lastUpdate = 0; haveScale = false; frontRatio = 0; frontRatioT = 0; turnCos = 1; deadRef = 0; steady = null;
     for (const s of Object.values(segs)) { s.group.visible = false; s.on = false; }
     for (const i of POSE_IDS) { filt[i].reset(); fresh[i] = true; vis[i] = 0; }
     scaleF.reset(); ratioF.reset(); ratioTF.reset(); sideF.reset();
@@ -233,5 +271,5 @@ export async function createBody({ scene, material }) {
     g.restore();
   }
 
-  return { update, apply, eachMaterial, labelItems, setSize, reset, drawVeil, get found() { return found; } };
+  return { update, apply, eachMaterial, labelItems, setSize, reset, clearHandArms, setHandArm, drawVeil, get found() { return found; } };
 }

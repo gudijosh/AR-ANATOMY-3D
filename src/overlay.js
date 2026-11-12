@@ -438,6 +438,7 @@ export async function createOverlay({ stage, S }) {
 
   // ------------------------------------------------------------ one frame
   let ticks = 0, fps = 0, fpsAt = 0, dataAt = 0;
+  const armWrist = new THREE.Vector3(), armDir = new THREE.Vector3(), HAND_LEN_CM = 8.53, HAND_WIDTH_CM = 5.68;   // wrist to middle knuckle, and across the knuckles
   const eulerTmp = new THREE.Euler();
   function render(now, face, handList, rightSides, pointer, bodyPose) {
     const sg = shade.getContext("2d"); sg.clearRect(0, 0, W, H);
@@ -450,6 +451,15 @@ export async function createOverlay({ stage, S }) {
     body.update(bodyPose && bodyPose.lms, W, H, now, headRef, bodyPose && bodyPose.world);
     const bodyOn = BODY_LAYER_KEYS.some(k => S[k]);
     if (bodyOn && bodyPose && bodyPose.mask) body.drawVeil(sg, bodyPose.mask, (1 - S.real) * 0.9, S.feather * 14);
+    body.clearHandArms();
+    if (S.arms || S.armMuscles) handList.forEach((lms, i) => {
+      // the hand's size on screen: the larger of its length and its width (either can look short when it tilts)
+      const span = (a, b) => Math.hypot((lms[a].x - lms[b].x) * W, (lms[a].y - lms[b].y) * H);
+      const k = Math.max(span(0, 9) / HAND_LEN_CM, span(5, 17) / HAND_WIDTH_CM);
+      armWrist.set(lms[0].x * W, (1 - lms[0].y) * H, 0);
+      armDir.set((lms[0].x - lms[9].x) * W, -(lms[0].y - lms[9].y) * H, 0);
+      if (armDir.lengthSq() > 1) body.setHandArm(rightSides[i], armWrist, armDir.normalize(), k);
+    });
     hands.forEach((rig, i) => {
       const lms = handList[i];
       if (lms && S.hands) {

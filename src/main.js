@@ -90,7 +90,7 @@ const bodyActive = () => BODY_KEYS.some(k => S[k]);
       save(); showSettings();
     });
   }
-  // the other menu pieces that carry an icon (quick picks, labels)
+  // the other menu pieces that carry an icon (labels)
   for (const el of document.querySelectorAll("[data-icon]")) el.insertAdjacentHTML("afterbegin", icon(el.dataset.icon));
 })();
 
@@ -152,8 +152,9 @@ $("labels").addEventListener("change", e => { S.labels = e.target.checked; save(
 $("reveal").addEventListener("change", e => { S.reveal = e.target.value; S.cut = 0.5; save(); showSettings(); });
 $("showdata").addEventListener("change", e => { S.showdata = e.target.checked; save(); showSettings(); });
 $("fitreset").addEventListener("click", () => { S.fs = S.fw = S.fh = S.fd = 1; S.fx = S.fy = S.fz = 0; save(); showSettings(); });
-for (const b of document.querySelectorAll("[data-preset]")) b.addEventListener("click", () => {
-  const p = b.dataset.preset, cat = id => CATEGORIES.find(c => c.id === id).items.map(i => i[0]);
+// ready-made sets of layers, for the test links only (?preset=organs)
+function applyPreset(p) {
+  const cat = id => CATEGORIES.find(c => c.id === id).items.map(i => i[0]);
   const on = new Set({
     head: ["skull", "brain", "eyes", "outline"],
     skull: ["skull", "eyes", "outline", "hands"], brain: ["brain", "outline"],
@@ -164,7 +165,7 @@ for (const b of document.querySelectorAll("[data-preset]")) b.addEventListener("
   }[p] || []);
   for (const k of LAYERS) S[k] = on.has(k);
   save(); showSettings();
-});
+}
 translatePage(); showSettings(); drawStatus();
 for (const b of document.querySelectorAll("[data-lang]")) b.addEventListener("click", () => setLang(b.dataset.lang));
 onLangChange(() => { showSettings(); drawStatus(); });
@@ -224,7 +225,7 @@ function runLive() {
         if (!lostSince) lostSince = now;
         if (now - lostSince > 250) overlay.loseHead();
       }
-      if (hand && (S.hands || S.reveal === "lens" || S.showdata)) {
+      if (hand && (S.hands || S.arms || S.armMuscles || S.reveal === "lens" || S.showdata)) {
         const hr = hand.detectForVideo(video, now);
         handList = hr.landmarks || [];
         const sides = hr.handedness || hr.handednesses || [];
@@ -262,7 +263,7 @@ function runDemo() {
   const params = new URLSearchParams(location.search), still = params.has("still");
   // optional preview settings for the demo only (not saved): ?preset=all&style=solid&labels
   const preset = params.get("preset");
-  if (preset) document.querySelector(`[data-preset="${preset}"]`)?.click();
+  if (preset) applyPreset(preset);
   if (params.get("style")) { S.style = params.get("style"); showSettings(); overlay.applyStyle(); }
   if (params.has("labels")) { S.labels = true; showSettings(); }
   if (params.get("lang")) setLang(params.get("lang"));
@@ -276,7 +277,12 @@ function runDemo() {
     const far = bodyActive();   // with body layers on, the pretend camera steps back to show the whole body
     const f = overlay.demoFace(time, far, turn);
     overlay.setHead(f.matrix, f.lms, 0.5 + 0.5 * Math.sin(time * 1.3));
-    if (far) { overlay.render(now, noface ? null : f.lms, f.hands, f.sides, pointer, { lms: f.body }); return; }
+    if (far) {
+      // ?legs: the shoulders and arms are out of the picture; ?nobody: the body tracker sees nothing (hands only)
+      if (params.has("legs")) for (const i of [11, 12, 13, 14, 15, 16]) f.body[i].visibility = 0;
+      overlay.render(now, noface ? null : f.lms, f.hands, f.sides, pointer, params.has("nobody") ? null : { lms: f.body });
+      return;
+    }
     const ky = 0.021, kx = ky * H / W, curl = 0.5 + 0.5 * Math.sin(time * 0.9);
     const pts = DEMO_HAND.map(([x, y, z], i) => {
       const joint = i % 4 === 0 && i ? 2 : i % 4 === 3 ? 1.2 : i % 4 === 2 ? 0.6 : 0;   // fingertips bend most
@@ -370,7 +376,7 @@ $("start").addEventListener("click", async () => {
 
 if (PHOTO) {   // optional preview settings, as in the demo
   const params = new URLSearchParams(location.search), preset = params.get("preset");
-  if (preset) document.querySelector(`[data-preset="${preset}"]`)?.click();
+  if (preset) applyPreset(preset);
   if (params.get("style")) { S.style = params.get("style"); showSettings(); }
   if (params.has("labels")) { S.labels = true; showSettings(); }
   if (params.get("real")) { S.real = +params.get("real"); showSettings(); }
