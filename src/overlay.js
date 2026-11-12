@@ -426,9 +426,16 @@ export async function createOverlay({ stage, S }) {
 
   // ------------------------------------------------------------ one frame
   let ticks = 0, fps = 0, fpsAt = 0, dataAt = 0;
+  const eulerTmp = new THREE.Euler();
   function render(now, face, handList, rightSides, pointer, bodyPose) {
     const sg = shade.getContext("2d"); sg.clearRect(0, 0, W, H);
-    body.update(bodyPose && bodyPose.lms, W, H, now);
+    // the face's size on screen (eye corners, undoing the head's own turn) is the body's steady size reference
+    let headRef = 0;
+    if (face && face[33] && face[263] && pose.found) {
+      eulerTmp.setFromQuaternion(pose.rot, "YXZ");
+      headRef = Math.hypot((face[33].x - face[263].x) * W, (face[33].y - face[263].y) * H) / Math.max(0.4, Math.cos(eulerTmp.y));
+    }
+    body.update(bodyPose && bodyPose.lms, W, H, now, headRef);
     const bodyOn = BODY_LAYER_KEYS.some(k => S[k]);
     if (bodyOn && bodyPose && bodyPose.mask) body.drawVeil(sg, bodyPose.mask, (1 - S.real) * 0.9, S.feather * 14);
     hands.forEach((rig, i) => {
@@ -505,7 +512,7 @@ export async function createOverlay({ stage, S }) {
   // far = the whole body in view (the dataset's own body and hands, posed by its measured joints)
   function demoFace(t, far = false) {
     const dist = far ? 195 : 46;
-    const m = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(-0.06 + 0.05 * Math.sin(t * 0.7), (far ? 0.3 : 0.42) * Math.sin(t * 0.5 + 0.9), 0.04, "YXZ"));
+    const m = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(-0.06 + 0.05 * Math.sin(t * 0.7), (far ? 0.78 : 0.42) * Math.sin(t * 0.5 + 0.9), 0.04, "YXZ"));
     m.setPosition(far ? -2 + 3 * Math.sin(t * 0.4) : -5 + 2 * Math.sin(t * 0.4), far ? 64 : 1.5, -dist);
     const cv = new THREE.Vector3(), nv = new THREE.Vector3();
     const proj = p => { cv.fromArray(p).applyMatrix4(m); nv.copy(cv).applyMatrix4(baseProj); return { x: (nv.x + 1) / 2, y: (1 - nv.y) / 2, cz: cv.z }; };

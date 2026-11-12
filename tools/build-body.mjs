@@ -89,6 +89,67 @@ function invBasis(ex, ey, ez) {
 const toLocal = (F, p) => { const d = sub(p, F.o); return [dot(F.inv[0], d), dot(F.inv[1], d), dot(F.inv[2], d)]; };
 function inFrame(m, F) { const out = new Float64Array(m.pos.length); for (let i = 0; i < m.pos.length; i += 3) { const q = toLocal(F, [m.pos[i], m.pos[i + 1], m.pos[i + 2]]); out[i] = q[0]; out[i + 1] = q[1]; out[i + 2] = q[2]; } return { pos: out, idx: m.idx }; }
 
+// ------------------------------------------------------------------ a smooth surface wrapped around a cloud of shapes
+// (the dataset's lungs are only airways and vessels; wrapping them gives the lung's own outline)
+function envelope(m, cell = 0.6, sigma = 1.5, isoFrac = 0.1) {
+  const b = bounds(m), pad = 3 * sigma + cell;
+  const o = b.lo.map(v => v - pad), n = b.hi.map((v, i) => Math.ceil((v + pad - o[i]) / cell) + 1);
+  const [nx, ny, nz] = n, at = (x, y, z) => x + nx * (y + ny * z);
+  let f = new Float32Array(nx * ny * nz);
+  const splat = p => { const x = Math.round((p[0] - o[0]) / cell), y = Math.round((p[1] - o[1]) / cell), z = Math.round((p[2] - o[2]) / cell); f[at(x, y, z)] = 1; };
+  for (let i = 0; i < m.pos.length / 3; i++) splat(vert(m, i));
+  for (let i = 0; i < m.idx.length; i += 3) splat(mul(add(add(vert(m, m.idx[i]), vert(m, m.idx[i + 1])), vert(m, m.idx[i + 2])), 1 / 3));
+  // blur in x, y and z
+  const r = Math.ceil(2.5 * sigma / cell), k = []; for (let i = -r; i <= r; i++) k.push(Math.exp(-0.5 * (i * cell / sigma) ** 2));
+  for (const axis of [0, 1, 2]) {
+    const g = new Float32Array(f.length), step = [1, nx, nx * ny][axis], len = n[axis];
+    for (let z = 0; z < nz; z++) for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) {
+      const c = [x, y, z][axis], base = at(x, y, z); let s = 0;
+      for (let i = -r; i <= r; i++) { const cc = c + i; if (cc >= 0 && cc < len) s += f[base + i * step] * k[i + r]; }
+      g[base] = s;
+    }
+    f = g;
+  }
+  let max = 0; for (const v of f) if (v > max) max = v;
+  const iso = max * isoFrac;
+  // surface nets: one vertex per cell the surface passes through, one quad per crossed grid edge
+  const cellV = new Int32Array((nx - 1) * (ny - 1) * (nz - 1)).fill(-1), cid = (x, y, z) => x + (nx - 1) * (y + (ny - 1) * z);
+  const pos = [], idx = [];
+  const corners = [[0, 0, 0], [1, 0, 0], [0, 1, 0], [1, 1, 0], [0, 0, 1], [1, 0, 1], [0, 1, 1], [1, 1, 1]];
+  const edges = [[0, 1], [2, 3], [4, 5], [6, 7], [0, 2], [1, 3], [4, 6], [5, 7], [0, 4], [1, 5], [2, 6], [3, 7]];
+  for (let z = 0; z < nz - 1; z++) for (let y = 0; y < ny - 1; y++) for (let x = 0; x < nx - 1; x++) {
+    const v = corners.map(([a, b2, c]) => f[at(x + a, y + b2, z + c)] - iso);
+    let s = [0, 0, 0], cnt = 0;
+    for (const [a, b2] of edges) if ((v[a] > 0) !== (v[b2] > 0)) {
+      const t = v[a] / (v[a] - v[b2]), A = corners[a], B = corners[b2];
+      s = add(s, [A[0] + (B[0] - A[0]) * t, A[1] + (B[1] - A[1]) * t, A[2] + (B[2] - A[2]) * t]); cnt++;
+    }
+    if (!cnt) continue;
+    s = mul(s, 1 / cnt);
+    cellV[cid(x, y, z)] = pos.length / 3;
+    pos.push(o[0] + (x + s[0]) * cell, o[1] + (y + s[1]) * cell, o[2] + (z + s[2]) * cell);
+  }
+  const quad = (a, b2, c, d, flip) => { if (a < 0 || b2 < 0 || c < 0 || d < 0) return; if (flip) idx.push(a, c, b2, a, d, c); else idx.push(a, b2, c, a, c, d); };
+  for (let z = 1; z < nz - 1; z++) for (let y = 1; y < ny - 1; y++) for (let x = 1; x < nx - 1; x++) {
+    const inside = f[at(x, y, z)] > iso;
+    if (inside !== (f[at(x + 1, y, z)] > iso) && x < nx - 1) quad(cellV[cid(x, y - 1, z - 1)], cellV[cid(x, y, z - 1)], cellV[cid(x, y, z)], cellV[cid(x, y - 1, z)], inside);
+    if (inside !== (f[at(x, y + 1, z)] > iso)) quad(cellV[cid(x - 1, y, z - 1)], cellV[cid(x - 1, y, z)], cellV[cid(x, y, z)], cellV[cid(x, y, z - 1)], inside);
+    if (inside !== (f[at(x, y, z + 1)] > iso)) quad(cellV[cid(x - 1, y - 1, z)], cellV[cid(x, y - 1, z)], cellV[cid(x, y, z)], cellV[cid(x - 1, y, z)], inside);
+  }
+  // relax the blocky grid a little
+  const P2 = Float64Array.from(pos);
+  for (let it = 0; it < 3; it++) {
+    const sum = new Float64Array(P2.length), c = new Float64Array(P2.length / 3);
+    for (let i = 0; i < idx.length; i += 3) for (let k2 = 0; k2 < 3; k2++) {
+      const a = idx[i + k2], b2 = idx[i + (k2 + 1) % 3];
+      for (let d = 0; d < 3; d++) { sum[3 * a + d] += P2[3 * b2 + d]; sum[3 * b2 + d] += P2[3 * a + d]; }
+      c[a]++; c[b2]++;
+    }
+    for (let i = 0; i < c.length; i++) if (c[i]) for (let d = 0; d < 3; d++) P2[3 * i + d] = 0.5 * P2[3 * i + d] + 0.5 * sum[3 * i + d] / c[i];
+  }
+  return { pos: P2, idx: Uint32Array.from(idx) };
+}
+
 // ------------------------------------------------------------------ inputs
 const parts = JSON.parse(fs.readFileSync(PARTS, "utf8"));
 const muscleParts = MUSCLES && fs.existsSync(MUSCLES) ? JSON.parse(fs.readFileSync(MUSCLES, "utf8")) : null;
@@ -151,7 +212,7 @@ function segmentOf(p) {
 
 // ------------------------------------------------------------------ build meshes per (segment, layer)
 const groups = new Map();   // "seg|layer" -> [meshes]
-const put = (seg, layer, m) => { const k = seg + "|" + layer; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(m); };
+const put = (seg, layer, m, variant = "") => { const k = seg + "|" + layer + "|" + variant; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(m); };
 const labels = [];
 const TORSO_ONLY = new Set(["spine", "pelvis", "ribs", "shoulders", "heart", "lungs", "liver", "stomach", "intestines", "kidneys", "pancreas", "diaphragm"]);
 const cleanName = c => { const t = c.replace(/^(right|left) /, ""); return t[0].toUpperCase() + t.slice(1); };
@@ -174,6 +235,7 @@ for (const [layer, list] of Object.entries(parts)) {
     const m = load(g.elements); if (!m.pos.length) continue;
     const seg = TORSO_ONLY.has(layer) ? "torso" : segmentOf(centroid(m));
     put(seg, layer, m);
+    if (/^(right|left) lung$/.test(g.concept)) put(seg, layer, envelope(m), "surface");   // the lung itself, around its airways
     addLabel(cleanName(g.concept), layer, seg, layer === "feet" || TORSO_ONLY.has(layer) && !/bone|clavicle|scapula|sacrum|column|cage/.test(g.concept) ? centroid(m) : frontPoint(m));
   }
 }
@@ -225,8 +287,8 @@ for (const [k, p] of Object.entries(J)) meta.joints[k] = applyT(p).map(v => +v.t
 
 const chunks = []; let offset = 0;
 for (const [key, list] of groups) {
-  const [seg, layer] = key.split("|");
-  const budget = layer === "bodyOutline" && seg === "torso" ? SKIN_TORSO : BUDGET[layer] || 3000;
+  const [seg, layer, variant] = key.split("|");
+  const budget = variant === "surface" ? 5000 : layer === "bodyOutline" && seg === "torso" ? SKIN_TORSO : BUDGET[layer] || 3000;
   const m = inFrame(simplify(merge(list), budget), SEG[seg]);
   const nv = m.pos.length / 3; if (nv > 65535) throw new Error(key + " has too many vertices: " + nv);
   const min = [1e9, 1e9, 1e9], max = [-1e9, -1e9, -1e9];
@@ -235,7 +297,7 @@ for (const [key, list] of groups) {
   const q = new Uint16Array(m.pos.length);
   for (let i = 0; i < m.pos.length; i++) q[i] = Math.round((m.pos[i] - min[i % 3]) / size[i % 3] * 65535);
   const ix = Uint16Array.from(m.idx);
-  meta.meshes.push({ seg, layer, nv, ni: ix.length, offV: offset, offI: offset + q.byteLength, min: min.map(v => +v.toFixed(5)), size: size.map(v => +v.toFixed(5)) });
+  meta.meshes.push({ seg, layer, variant: variant || undefined, nv, ni: ix.length, offV: offset, offI: offset + q.byteLength, min: min.map(v => +v.toFixed(5)), size: size.map(v => +v.toFixed(5)) });
   chunks.push(Buffer.from(q.buffer), Buffer.from(ix.buffer)); offset += q.byteLength + ix.byteLength;
   if (ix.length % 2) { chunks.push(Buffer.alloc(2)); offset += 2; }
   console.log(key.padEnd(26), "triangles", ix.length / 3);
