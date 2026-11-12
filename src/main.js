@@ -1,6 +1,7 @@
 import "./style.css";
 import { t, translatePage, setLang, onLangChange } from "./i18n.js";
 import anatomyMeta from "./anatomy/anatomy.json";
+import { icon } from "./icons.js";
 // Controls, settings and start-up. The 3D overlay and tracking load only when the camera starts.
 const $ = id => document.getElementById(id);
 const statusEl = $("status"), video = $("video"), stage = $("stage");
@@ -36,12 +37,12 @@ async function photoStream(url, crop) {
 // ------------------------------------------------------------ settings
 // every switchable layer, grouped into the categories of the side panel ([key, dot colour])
 const CATEGORIES = [
-  { id: "bones", dot: "#bfe3ff", items: [["skull", "#bfe3ff"], ["spine", "#bfe3ff"], ["ribs", "#bfe3ff"], ["shoulders", "#bfe3ff"], ["arms", "#bfe3ff"],
+  { id: "bones", dot: "#bfe3ff", icon: "skull", items: [["skull", "#bfe3ff"], ["spine", "#bfe3ff"], ["ribs", "#bfe3ff"], ["shoulders", "#bfe3ff"], ["arms", "#bfe3ff"],
     ["hands", "#b9c6d2"], ["pelvis", "#bfe3ff"], ["legs", "#bfe3ff"], ["feet", "#bfe3ff"]] },
-  { id: "organs", dot: "#ff9fc0", items: [["brain", "#ff9fc0"], ["eyes", "#f3d65a"], ["heart", "#ff5d73"], ["lungs", "#ff9fc0"], ["liver", "#ffa25e"],
+  { id: "organs", dot: "#ff9fc0", icon: "heart", items: [["brain", "#ff9fc0"], ["eyes", "#f3d65a"], ["heart", "#ff5d73"], ["lungs", "#ff9fc0"], ["liver", "#ffa25e"],
     ["stomach", "#ffd27a"], ["intestines", "#ffbf9c"], ["kidneys", "#ff7f6b"], ["pancreas", "#fff08a"], ["diaphragm", "#d59bff"]] },
-  { id: "muscles", dot: "#ff6b5e", items: [["muscles", "#ff6b5e"], ["trunkMuscles", "#ff6b5e"], ["armMuscles", "#ff6b5e"], ["legMuscles", "#ff6b5e"]] },
-  { id: "skin", dot: "#6fb6ff", items: [["outline", "#6fb6ff"], ["bodyOutline", "#6fb6ff"]] },
+  { id: "muscles", dot: "#ff6b5e", icon: "armMuscles", items: [["muscles", "#ff6b5e"], ["trunkMuscles", "#ff6b5e"], ["armMuscles", "#ff6b5e"], ["legMuscles", "#ff6b5e"]] },
+  { id: "skin", dot: "#6fb6ff", icon: "bodyOutline", items: [["outline", "#6fb6ff"], ["bodyOutline", "#6fb6ff"]] },
 ];
 const BODY_KEYS = ["spine", "ribs", "shoulders", "arms", "pelvis", "legs", "feet", "heart", "lungs", "liver", "stomach", "intestines",
   "kidneys", "pancreas", "diaphragm", "trunkMuscles", "armMuscles", "legMuscles", "bodyOutline"];
@@ -50,29 +51,42 @@ const DEFAULTS = {
   ...Object.fromEntries(BODY_KEYS.map(k => [k, false])),
   style: "xray", bright: 1, real: 0.12, feather: 0.2, reveal: "whole", cut: 0.5, showdata: false,
   fs: 1, fw: 1, fh: 1, fd: 1, fx: 0, fy: 0, fz: 0, labels: false,
+  openCats: [],   // which sections of the "what to see" menu are expanded
 };
 const STORE = "ar-anatomy-3d-settings";
 const LAYERS = CATEGORIES.flatMap(c => c.items.map(i => i[0]));
 const bodyActive = () => BODY_KEYS.some(k => S[k]);
 
-// the "what to see" menu: one section per category, with a switch for the whole section and a big tile per part
+// the "what to see" menu: one section per category that expands and collapses, with a switch for the whole section
+// and a big tile with its own icon for every part
 (function buildCategories() {
   const host = $("cats");
   for (const c of CATEGORIES) {
     const wrap = document.createElement("div");
     wrap.className = "cat"; wrap.dataset.cat = c.id;
     wrap.innerHTML = `<div class="cat-head">
-        <h4><i style="--c:${c.dot}"></i><span data-i18n="cat.${c.id}"></span></h4><span class="cat-count" id="cnt-${c.id}"></span>
+        <button type="button" class="cat-toggle" aria-expanded="false" aria-controls="cat-${c.id}">
+          <span class="ic" style="--c:${c.dot}">${icon(c.icon)}</span>
+          <span class="cat-name" data-i18n="cat.${c.id}"></span><span class="cat-count" id="cnt-${c.id}"></span>
+          <span class="chev">${icon("chevron")}</span>
+        </button>
         <label class="cat-all"><span data-i18n="all"></span><input type="checkbox" id="all-${c.id}" data-i18n-aria="cat.all.${c.id}"></label>
       </div>
-      <div class="tiles">${c.items.map(([k, col]) =>
-        `<label class="tile"><input type="checkbox" id="L_${k}"><i style="--c:${col}"></i><span data-i18n="l.${k}"></span></label>`).join("")}</div>`;
+      <div class="cat-body" id="cat-${c.id}"><div class="cat-inner"><div class="tiles">${c.items.map(([k, col]) =>
+        `<label class="tile"><input type="checkbox" id="L_${k}"><span class="ic" style="--c:${col}">${icon(k)}</span><span data-i18n="l.${k}"></span></label>`).join("")}</div></div></div>`;
     host.appendChild(wrap);
+    wrap.querySelector(".cat-toggle").addEventListener("click", () => {
+      const open = new Set(Array.isArray(S.openCats) ? S.openCats : []);
+      open.has(c.id) ? open.delete(c.id) : open.add(c.id);
+      S.openCats = [...open]; save(); showCategories();
+    });
     $("all-" + c.id).addEventListener("change", e => {
       for (const [k] of c.items) S[k] = e.target.checked;
       save(); showSettings();
     });
   }
+  // the other menu pieces that carry an icon (quick picks, labels)
+  for (const el of document.querySelectorAll("[data-icon]")) el.insertAdjacentHTML("afterbegin", icon(el.dataset.icon));
 })();
 
 // pop-up menus: one open at a time; the dock button, the close button, Escape or a tap outside closes it
@@ -95,6 +109,9 @@ document.addEventListener("pointerdown", e => { if (openId() && !e.target.closes
 function showCategories() {
   for (const c of CATEGORIES) {
     const on = c.items.filter(([k]) => S[k]).length, all = $("all-" + c.id);
+    const open = Array.isArray(S.openCats) && S.openCats.includes(c.id), wrap = document.querySelector(`.cat[data-cat="${c.id}"]`);
+    wrap.classList.toggle("open", open); wrap.querySelector(".cat-toggle").setAttribute("aria-expanded", String(open));
+    $("cat-" + c.id).inert = !open;   // a closed section's tiles can't be reached with the keyboard
     $("cnt-" + c.id).textContent = on + "/" + c.items.length;
     all.checked = on === c.items.length; all.indeterminate = on > 0 && on < c.items.length;
   }
