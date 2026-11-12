@@ -53,7 +53,7 @@ const BODY_KEYS = ["spine", "ribs", "shoulders", "arms", "pelvis", "legs", "feet
 const DEFAULTS = {
   skull: true, brain: false, muscles: false, eyes: true, outline: true, hands: true,
   ...Object.fromEntries(BODY_KEYS.map(k => [k, false])),
-  style: "xray", bright: 1, real: 0.12, feather: 0.2, reveal: "whole", cut: 0.5, showdata: false,
+  style: "xray", bright: 1, real: 1, feather: 1, reveal: "whole", cut: 0.5, showdata: false,
   fs: 1, fw: 1, fh: 1, fd: 1, fx: 0, fy: 0, fz: 0, labels: false,
   openCats: [],   // which sections of the "what to see" menu are expanded
 };
@@ -124,6 +124,8 @@ function showCategories() {
 const SLIDERS = ["bright", "real", "feather", "cut", "fs", "fw", "fh", "fd", "fx", "fy", "fz"];
 const S = { ...DEFAULTS };
 try { Object.assign(S, JSON.parse(localStorage.getItem(STORE) || "{}")); } catch { /* ignore */ }
+// settings saved before the app started fully see-through with fully soft edges take the new starting values once
+if (S.v !== 2) { S.real = DEFAULTS.real; S.feather = DEFAULTS.feather; S.v = 2; }
 const save = () => { try { localStorage.setItem(STORE, JSON.stringify(S)); } catch { /* ignore */ } };
 
 let overlay = null;
