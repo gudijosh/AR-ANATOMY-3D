@@ -1,7 +1,7 @@
 // The 3D overlay: anatomy pinned to the tracked head, bones on tracked hands, labels and the data read-out.
 import * as THREE from "three";
 import { loadAnatomy, LABELS, JAW_PIVOT, HEAD_MIDDLE, HAND_JOINTS } from "./anatomy.js";
-import { createBody, BODY_LAYER_KEYS, BODY_META } from "./body.js";
+import { createBody, BODY_LAYER_KEYS, BODY_LAYERS, BODY_META } from "./body.js";
 import { OneEuro, OneEuro3 } from "./filter.js";
 const BODY_GROUPS = [["spine", "pelvis", "ribs", "shoulders", "arms", "legs", "feet"],
   ["heart", "lungs", "liver", "stomach", "intestines", "kidneys", "pancreas", "diaphragm"], ["trunkMuscles", "armMuscles", "legMuscles"], ["arteries", "veins"]];
@@ -142,6 +142,12 @@ export async function createOverlay({ stage, S }) {
   const handMeshes = r => [r.palm, ...r.fingers];
   const body = await createBody({ scene: handScene, material });
   body.setSize(() => W, () => H, x => fx(x));
+  // the blood vessels above the neck ride on the head, and answer to their own layer and to the "head" zone
+  for (const hp of body.headParts) {
+    const [tint, solidTint] = BODY_LAYERS[hp.layer];
+    part(hp.layer + "_head", hp.geo, hp.layer, tint, solidTint, 6).material.uniforms.uNeck.value = 1;
+    parts[hp.layer + "_head"].zone = "vHead";
+  }
 
   function forEachMaterial(fn) {
     for (const k in parts) fn(parts[k].mesh.material, parts[k]);
@@ -291,8 +297,8 @@ export async function createOverlay({ stage, S }) {
     const share = 1 / (0.4 + 0.6 * Math.max(1, heavy));     // glowing layers add up, so share the light
     const solid = S.style === "solid";
     for (const k in parts) {
-      const { mesh, layer } = parts[k], u = mesh.material.uniforms;
-      mesh.visible = layer === "veil" ? true : !!S[layer];
+      const { mesh, layer, zone } = parts[k], u = mesh.material.uniforms;
+      mesh.visible = layer === "veil" ? true : !!S[layer] && (!zone || !!S[zone]);
       u.uGain.value = solid && k !== "outline" ? Math.min(1.25, 0.6 + 0.4 * S.bright) : S.bright * (GLOW[k] || 1) * (layer === "outline" ? 1 : share);
       u.uAlpha.value = layer === "veil" ? 1 - S.real : 1;
       u.uCutOn.value = on; u.uPlane.value.set(x, y, 0, w);

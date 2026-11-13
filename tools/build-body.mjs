@@ -272,7 +272,7 @@ if (muscleParts) {
 
 if (vesselParts) {   // arteries and veins: long thin pieces that run through several segments, so they are split like the skin
   console.log("vessels…");
-  const neckCut = shY + 7;   // the head draws its own anatomy
+  const neckCut = shY + 7;   // where the body skin ends and the head begins
   const inHand = (seg, p) => seg.startsWith("farm") && dot(sub(p, SEG[seg].o), SEG[seg].ex) / dot(SEG[seg].ex, SEG[seg].ex) > 1.02;
   for (const [layer, g] of Object.entries(vesselParts)) {
     // each vessel is thinned on its own first: thinning the whole tree at once would wipe out the small branches
@@ -287,8 +287,7 @@ if (vesselParts) {   // arteries and veins: long thin pieces that run through se
     const all = merge(pieces), per = new Map();
     for (let i = 0; i < all.idx.length; i += 3) {
       const cc = mul(add(add(vert(all, all.idx[i]), vert(all, all.idx[i + 1])), vert(all, all.idx[i + 2])), 1 / 3);
-      if (cc[1] > neckCut) continue;
-      const seg = segmentOf(cc);
+      const seg = cc[1] > neckCut ? "head" : segmentOf(cc);   // above the neck the piece rides on the head tracker
       if (inHand(seg, cc)) continue;   // the hand tracker draws the hand
       if (!per.has(seg)) per.set(seg, []);
       per.get(seg).push(all.idx[i], all.idx[i + 1], all.idx[i + 2]);
@@ -319,13 +318,15 @@ Object.assign(meta, { shoulderW: +shW.toFixed(3), hipW: +hipW.toFixed(3), torsoH
 // joints in the head-tracker space (for the demo scene): the head file's fit maps the dataset onto the face
 const head = JSON.parse(fs.readFileSync(path.join(OUT, "anatomy.json"), "utf8"));
 const T = head.fit, applyT = p => add(mul([dot(T.R[0], p), dot(T.R[1], p), dot(T.R[2], p)], T.s), T.t);
+// pieces of the head are stored in that same head space, next to the skull and brain
+function inHead(m) { const out = new Float64Array(m.pos.length); for (let i = 0; i < m.pos.length; i += 3) { const q = applyT([m.pos[i], m.pos[i + 1], m.pos[i + 2]]); out[i] = q[0]; out[i + 1] = q[1]; out[i + 2] = q[2]; } return { pos: out, idx: m.idx }; }
 for (const [k, p] of Object.entries(J)) meta.joints[k] = applyT(p).map(v => +v.toFixed(3));
 
 const chunks = []; let offset = 0;
 for (const [key, list] of groups) {
   const [seg, layer, variant] = key.split("|");
   const budget = variant === "surface" ? 5000 : layer === "bodyOutline" && seg === "torso" ? SKIN_TORSO : BUDGET[layer] || 3000;
-  const m = inFrame(simplify(merge(list), budget), SEG[seg]);
+  const thin = simplify(merge(list), budget), m = seg === "head" ? inHead(thin) : inFrame(thin, SEG[seg]);
   const nv = m.pos.length / 3; if (nv > 65535) throw new Error(key + " has too many vertices: " + nv);
   const min = [1e9, 1e9, 1e9], max = [-1e9, -1e9, -1e9];
   for (let i = 0; i < m.pos.length; i++) { min[i % 3] = Math.min(min[i % 3], m.pos[i]); max[i % 3] = Math.max(max[i % 3], m.pos[i]); }
