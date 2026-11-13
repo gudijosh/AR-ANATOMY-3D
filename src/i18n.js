@@ -14,7 +14,7 @@ const UI = {
     "all": "All",
     "h.layers": "Layers", "h.look": "Look", "h.mixed": "Mixed reality", "h.fit": "Fit to my head",
     "p.head": "Head", "p.skeleton": "Skeleton", "p.organs": "Organs", "p.skull": "Skull", "p.brain": "Brain", "p.muscles": "Muscles", "p.all": "Everything",
-    "cat.bones": "Bones", "cat.organs": "Organs", "cat.vessels": "Vessels", "cat.all.vessels": "All blood vessels", "l.arteries": "Arteries", "l.veins": "Veins", "l.vHead": "Head", "l.vTorso": "Torso", "l.vArms": "Arms", "l.vLegs": "Legs", "cat.muscles": "Muscles", "cat.skin": "Skin outline",
+    "cat.bones": "Bones", "cat.organs": "Organs", "cat.vessels": "Vessels", "cat.nerves": "Nerves & tendons", "cat.all.nerves": "All nerves and tendons", "l.nerves": "Nerves", "l.tendons": "Tendons & ligaments", "cat.all.vessels": "All blood vessels", "l.arteries": "Arteries", "l.veins": "Veins", "l.vHead": "Head", "l.vTorso": "Torso", "l.vArms": "Arms", "l.vLegs": "Legs", "cat.muscles": "Muscles", "cat.skin": "Skin outline",
     "cat.all.bones": "All bones", "cat.all.organs": "All organs", "cat.all.muscles": "All muscles", "cat.all.skin": "Whole skin outline",
     "l.skull": "Skull", "l.spine": "Spine", "l.ribs": "Ribs & sternum", "l.shoulders": "Shoulder blades", "l.arms": "Arms",
     "l.hands": "Hands", "l.pelvis": "Pelvis", "l.legs": "Legs", "l.feet": "Feet",
@@ -34,7 +34,7 @@ const UI = {
     "f.x": "Left / right", "f.y": "Up / down", "f.z": "Forward / back",
     "tip": "Tip: choose Solid, set See-through to about half, then line the skull up with your face.",
     "reset": "Reset fit",
-    "credit": "Anatomy models: BodyParts3D, © The Database Center for Life Science, licensed under CC Attribution-Share Alike 2.1 Japan. Simplified and re-aligned; face muscles modelled on its skull.",
+    "credit": "Anatomy models: BodyParts3D, © The Database Center for Life Science, licensed under CC Attribution-Share Alike 2.1 Japan. Nerves, tendons and ligaments: Z-Anatomy, the libre 3D atlas of anatomy, licensed under CC Attribution-Share Alike 4.0. Simplified and re-aligned; face muscles modelled on the skull.",
     // status
     "st.idle": "Click Start camera, then allow the camera.",
     "st.asking": "Asking for the camera…",
@@ -73,7 +73,7 @@ const UI = {
     "all": "Todo",
     "h.layers": "Capas", "h.look": "Aspecto", "h.mixed": "Realidad mixta", "h.fit": "Ajustar a mi cabeza",
     "p.head": "Cabeza", "p.skeleton": "Esqueleto", "p.organs": "Órganos", "p.skull": "Cráneo", "p.brain": "Cerebro", "p.muscles": "Músculos", "p.all": "Todo",
-    "cat.bones": "Huesos", "cat.organs": "Órganos", "cat.vessels": "Vasos", "cat.all.vessels": "Todos los vasos sanguíneos", "l.arteries": "Arterias", "l.veins": "Venas", "l.vHead": "Cabeza", "l.vTorso": "Torso", "l.vArms": "Brazos", "l.vLegs": "Piernas", "cat.muscles": "Músculos", "cat.skin": "Contorno de la piel",
+    "cat.bones": "Huesos", "cat.organs": "Órganos", "cat.vessels": "Vasos", "cat.nerves": "Nervios y tendones", "cat.all.nerves": "Todos los nervios y tendones", "l.nerves": "Nervios", "l.tendons": "Tendones y ligamentos", "cat.all.vessels": "Todos los vasos sanguíneos", "l.arteries": "Arterias", "l.veins": "Venas", "l.vHead": "Cabeza", "l.vTorso": "Torso", "l.vArms": "Brazos", "l.vLegs": "Piernas", "cat.muscles": "Músculos", "cat.skin": "Contorno de la piel",
     "cat.all.bones": "Todos los huesos", "cat.all.organs": "Todos los órganos", "cat.all.muscles": "Todos los músculos", "cat.all.skin": "Todo el contorno",
     "l.skull": "Cráneo", "l.spine": "Columna", "l.ribs": "Costillas y esternón", "l.shoulders": "Clavículas y escápulas", "l.arms": "Brazos",
     "l.hands": "Manos", "l.pelvis": "Pelvis", "l.legs": "Piernas", "l.feet": "Pies",
@@ -93,7 +93,7 @@ const UI = {
     "f.x": "Izquierda / derecha", "f.y": "Arriba / abajo", "f.z": "Adelante / atrás",
     "tip": "Consejo: elige Sólido, pon la Transparencia a la mitad y alinea el cráneo con tu cara.",
     "reset": "Restablecer ajuste",
-    "credit": "Modelos anatómicos: BodyParts3D, © The Database Center for Life Science, con licencia CC Atribución-CompartirIgual 2.1 Japón. Simplificados y realineados; músculos de la cara modelados sobre su cráneo.",
+    "credit": "Modelos anatómicos: BodyParts3D, © The Database Center for Life Science, con licencia CC Atribución-CompartirIgual 2.1 Japón. Nervios, tendones y ligamentos: Z-Anatomy, el atlas libre de anatomía en 3D, con licencia CC Atribución-CompartirIgual 4.0. Simplificados y realineados; músculos de la cara modelados sobre el cráneo.",
     "st.idle": "Pulsa Iniciar cámara y luego permite el acceso a la cámara.",
     "st.asking": "Pidiendo acceso a la cámara…",
     "st.loading3d": "Cargando la anatomía 3D…",
@@ -157,12 +157,23 @@ const NAMES_ES = {
   "Inferior vena cava": "Vena cava inferior", "Internal jugular vein": "Vena yugular interna", "Subclavian vein": "Vena subclavia",
   "Brachiocephalic vein": "Vena braquiocefálica", "Cephalic vein": "Vena cefálica", "Basilic vein": "Vena basílica", "Femoral vein": "Vena femoral",
   "Great saphenous vein": "Vena safena mayor", "Popliteal vein": "Vena poplítea", "Portal vein": "Vena porta", "Renal vein": "Vena renal",
+  "Sciatic nerve": "Nervio ciático", "Median nerve": "Nervio mediano", "Ulnar nerve": "Nervio cubital", "Radial nerve": "Nervio radial",
+  "Femoral nerve": "Nervio femoral", "Tibial nerve": "Nervio tibial", "Common fibular nerve": "Nervio peroneo común", "Vagus nerve": "Nervio vago",
+  "Axillary nerve": "Nervio axilar", "Musculocutaneous nerve": "Nervio musculocutáneo", "Obturator nerve": "Nervio obturador",
+  "Intercostal nerves": "Nervios intercostales", "Cauda equina": "Cola de caballo", "Spinal cord": "Médula espinal", "Saphenous nerve": "Nervio safeno",
+  "Pudendal nerve": "Nervio pudendo", "Achilles tendon": "Tendón de Aquiles", "Anterior cruciate ligament": "Ligamento cruzado anterior",
+  "Posterior cruciate ligament": "Ligamento cruzado posterior", "Lateral collateral ligament": "Ligamento colateral lateral",
+  "Plantar aponeurosis": "Aponeurosis plantar", "Iliotibial tract": "Cintilla iliotibial", "Anterior longitudinal ligament": "Ligamento longitudinal anterior",
+  "Medial meniscus": "Menisco medial", "Lateral meniscus": "Menisco lateral", "Coracoacromial ligament": "Ligamento coracoacromial",
+  "Interosseous membrane of forearm": "Membrana interósea del antebrazo", "Interosseous membrane of leg": "Membrana interósea de la pierna",
+  "Sacrotuberous ligament": "Ligamento sacrotuberoso", "Linea alba": "Línea alba",
   "Flexor carpi radialis": "Flexor radial del carpo", "Extensor digitorum": "Extensor de los dedos", "Pronator teres": "Pronador redondo",
 };
 // nicer English for some dataset names
 const NAMES_EN = {
   "Cervical vertebral column": "Cervical vertebrae", "Thoracic vertebral column": "Thoracic vertebrae", "Lumbar vertebral column": "Lumbar vertebrae",
-  "Foot": "Foot bones", "Arch of aorta": "Aortic arch", "Hepatic portal vein": "Portal vein",
+  "Foot": "Foot bones", "Arch of aorta": "Aortic arch", "Hepatic portal vein": "Portal vein", "Vagus nerve (X)": "Vagus nerve", "White matter of spinal cord": "Spinal cord",
+  "Calcaneal tendon": "Achilles tendon", "Fibular collateral ligament": "Lateral collateral ligament", "Coraco-acromial ligament": "Coracoacromial ligament",
 };
 
 const KEY = "ar-anatomy-3d-lang";

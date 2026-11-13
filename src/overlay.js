@@ -4,7 +4,7 @@ import { loadAnatomy, LABELS, JAW_PIVOT, HEAD_MIDDLE, HAND_JOINTS } from "./anat
 import { createBody, BODY_LAYER_KEYS, BODY_LAYERS, BODY_META } from "./body.js";
 import { OneEuro, OneEuro3 } from "./filter.js";
 const BODY_GROUPS = [["spine", "pelvis", "ribs", "shoulders", "arms", "legs", "feet"],
-  ["heart", "lungs", "liver", "stomach", "intestines", "kidneys", "pancreas", "diaphragm"], ["trunkMuscles", "armMuscles", "legMuscles"], ["arteries", "veins"]];
+  ["heart", "lungs", "liver", "stomach", "intestines", "kidneys", "pancreas", "diaphragm"], ["trunkMuscles", "armMuscles", "legMuscles"], ["arteries", "veins"], ["nerves", "tendons"]];
 import { t, anatomyName } from "./i18n.js";
 
 // Points of the face tracker's own reference face (cm) used to pin the model to the picture.
@@ -142,11 +142,11 @@ export async function createOverlay({ stage, S }) {
   const handMeshes = r => [r.palm, ...r.fingers];
   const body = await createBody({ scene: handScene, material });
   body.setSize(() => W, () => H, x => fx(x));
-  // the blood vessels above the neck ride on the head, and answer to their own layer and to the "head" zone
+  // what the body layers have above the neck (vessels, nerves, ligaments) rides on the head; the vessels also answer to the "head" zone
   for (const hp of body.headParts) {
     const [tint, solidTint] = BODY_LAYERS[hp.layer];
     part(hp.layer + "_head", hp.geo, hp.layer, tint, solidTint, 6).material.uniforms.uNeck.value = 1;
-    parts[hp.layer + "_head"].zone = "vHead";
+    if (hp.layer === "arteries" || hp.layer === "veins") parts[hp.layer + "_head"].zone = "vHead";
   }
 
   function forEachMaterial(fn) {
