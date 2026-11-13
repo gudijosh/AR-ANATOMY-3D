@@ -2,18 +2,21 @@
 // each piece stored in the frame of the body segment that carries it (torso, upper arms, forearms, thighs,
 // shins, feet), so the page can pin it to the body tracker's points.
 //
-//   node tools/build-body.mjs <parts.json> <obj folder> [<muscles.json> <obj folder of the isa set> [<vessels.json> <its obj folder>]]
+//   node tools/build-body.mjs <parts.json> <obj folder> [<muscles.json> <obj folder of the isa set> [<extra.json> <its obj folder>]…]
 //
 // parts.json / muscles.json: { layer: [{ concept, elements: ["FJ…"] }] } (made from the BodyParts3D part lists).
-// vessels.json: { layer: { elements: ["FJ…"], labels: [{ t, elements }] } } for the arteries and veins.
+// extra.json (any number of them): { layer: { elements: ["…"], labels: [{ t, elements }], keep } } for the long thin systems that run
+// through the whole body: the arteries and veins of BodyParts3D, and the nerves, tendons and ligaments of Z-Anatomy (fitted onto
+// the BodyParts3D bones beforehand and saved in the same OBJ convention).
 // Data: BodyParts3D, (c) The Database Center for Life Science, CC Attribution-Share Alike 2.1 Japan.
+// Nerves, tendons and ligaments: Z-Anatomy, the libre 3D atlas of anatomy, CC Attribution-Share Alike 4.0.
 // The output is a derivative of BodyParts3D and is shared under the same licence.
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { MeshoptSimplifier } from "meshoptimizer";
 
-const [PARTS, OBJ, MUSCLES, OBJ2, VESSELS, OBJ3] = process.argv.slice(2);
+const [PARTS, OBJ, MUSCLES, OBJ2, ...EXTRA] = process.argv.slice(2);
 if (!PARTS || !OBJ) { console.error("usage: node tools/build-body.mjs <parts.json> <obj folder> [<muscles.json> <obj folder>]"); process.exit(1); }
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const OUT = path.resolve(HERE, "../src/anatomy");
@@ -154,7 +157,8 @@ function envelope(m, cell = 0.6, sigma = 1.5, isoFrac = 0.1) {
 // ------------------------------------------------------------------ inputs
 const parts = JSON.parse(fs.readFileSync(PARTS, "utf8"));
 const muscleParts = MUSCLES && fs.existsSync(MUSCLES) ? JSON.parse(fs.readFileSync(MUSCLES, "utf8")) : null;
-const vesselParts = VESSELS && fs.existsSync(VESSELS) ? JSON.parse(fs.readFileSync(VESSELS, "utf8")) : null;
+const extras = [];   // [parts, obj folder]
+for (let i = 0; i + 1 < EXTRA.length; i += 2) if (fs.existsSync(EXTRA[i])) extras.push([JSON.parse(fs.readFileSync(EXTRA[i], "utf8")), EXTRA[i + 1]]);
 const load = (els, dir = OBJ) => merge(els.map(e => readObj(dir, e)).filter(Boolean));
 const concept = (layer, name) => (parts[layer] || []).find(g => g.concept === name);
 const bone = name => { for (const l in parts) { const g = concept(l, name); if (g) return load(g.elements); } throw new Error("no " + name); };
@@ -270,13 +274,13 @@ if (muscleParts) {
   for (const [seg, idx] of per) put(seg, "bodyOutline", compact({ pos: skin.pos, idx: Uint32Array.from(idx) }));
 }
 
-if (vesselParts) {   // arteries and veins: long thin pieces that run through several segments, so they are split like the skin
-  console.log("vessels…");
+for (const [vesselParts, OBJ3] of extras) {   // vessels, nerves, tendons: long thin pieces that run through several segments, so they are split like the skin
+  console.log("vessels, nerves, tendons…");
   const neckCut = shY + 7;   // where the body skin ends and the head begins
   const inHand = (seg, p) => seg.startsWith("farm") && dot(sub(p, SEG[seg].o), SEG[seg].ex) / dot(SEG[seg].ex, SEG[seg].ex) > 1.02;
   for (const [layer, g] of Object.entries(vesselParts)) {
     // each vessel is thinned on its own first: thinning the whole tree at once would wipe out the small branches
-    const keep = 0.05, pieces = [];
+    const keep = g.keep || 0.05, pieces = [];
     for (const e of g.elements) {
       const raw = readObj(OBJ3, e); if (!raw) continue;
       const m = weld(raw), want = Math.max(36, Math.round(m.idx.length / 3 * keep)) * 3;
@@ -307,10 +311,10 @@ const BUDGET = {
   spine: 9000, pelvis: 5000, ribs: 10000, shoulders: 3500, arms: 1600, legs: 2400, feet: 3500,
   heart: 6000, lungs: 9000, liver: 4000, stomach: 2500, intestines: 9000, kidneys: 3000, pancreas: 1200, diaphragm: 2000,
   trunkMuscles: 22000, armMuscles: 4500, legMuscles: 7000, bodyOutline: 2500,
-  arteries: 60000, veins: 60000,   // already thinned piece by piece above
+  arteries: 60000, veins: 60000, nerves: 60000, tendons: 60000,   // already thinned piece by piece above
 };
 const SKIN_TORSO = 7000;
-const meta = { source: "BodyParts3D, (c) The Database Center for Life Science, CC BY-SA 2.1 JP; simplified and split into body segments",
+const meta = { source: "BodyParts3D, (c) The Database Center for Life Science, CC BY-SA 2.1 JP; nerves, tendons and ligaments from Z-Anatomy, CC BY-SA 4.0; simplified and split into body segments",
   segments: {}, meshes: [], labels, torsoK: +(shW / hipW).toFixed(5), joints: {} };
 for (const [k, F] of Object.entries(SEG)) meta.segments[k] = k === "torso" ? { kind: "torso" } : { kind: "limb", a: F.a, b: F.b, ref: F.ref, len: +len(F.ex).toFixed(3) };
 // real sizes (cm), so the page can keep bone thickness and depth steady from one stable body scale

@@ -47,12 +47,13 @@ const CATEGORIES = [
     ["stomach", "#ffd27a"], ["intestines", "#ffbf9c"], ["kidneys", "#ff7f6b"], ["pancreas", "#fff08a"], ["diaphragm", "#d59bff"]] },
   { id: "vessels", dot: "#ff4d5e", icon: "arteries", items: [["arteries", "#ff4d5e"], ["veins", "#6f8dff"],
     ["vHead", "#e7b7c8"], ["vTorso", "#e7b7c8"], ["vArms", "#e7b7c8"], ["vLegs", "#e7b7c8"]] },   // the last four choose where the vessels show
+  { id: "nerves", dot: "#ffe066", icon: "nerves", items: [["nerves", "#ffe066"], ["tendons", "#e8e4d4"]] },
   { id: "muscles", dot: "#ff6b5e", icon: "armMuscles", items: [["muscles", "#ff6b5e"], ["trunkMuscles", "#ff6b5e"], ["armMuscles", "#ff6b5e"], ["legMuscles", "#ff6b5e"]] },
   { id: "skin", dot: "#6fb6ff", icon: "bodyOutline", items: [["outline", "#6fb6ff"], ["bodyOutline", "#6fb6ff"]] },
 ];
 const VESSEL_KINDS = ["arteries", "veins"], VESSEL_ZONES = ["vHead", "vTorso", "vArms", "vLegs"];
 const BODY_KEYS = ["spine", "ribs", "shoulders", "arms", "pelvis", "legs", "feet", "heart", "lungs", "liver", "stomach", "intestines",
-  "kidneys", "pancreas", "diaphragm", "arteries", "veins", "trunkMuscles", "armMuscles", "legMuscles", "bodyOutline"];
+  "kidneys", "pancreas", "diaphragm", "arteries", "veins", "nerves", "tendons", "trunkMuscles", "armMuscles", "legMuscles", "bodyOutline"];
 const DEFAULTS = {
   skull: true, brain: false, muscles: false, eyes: true, outline: true, hands: true,
   ...Object.fromEntries(BODY_KEYS.map(k => [k, false])),
@@ -129,6 +130,7 @@ const SLIDERS = ["bright", "real", "feather", "cut", "fs", "fw", "fh", "fd", "fx
 const S = { ...DEFAULTS };
 try { Object.assign(S, JSON.parse(localStorage.getItem(STORE) || "{}")); } catch { /* ignore */ }
 // settings saved before the starting values changed (fully see-through, sharp edges) take the new ones once
+if (S.reveal === "top" || S.reveal === "bottom") S.reveal = "whole";   // those two ways of cutting the head are gone
 if (S.v !== 3) { if (S.v !== 2) S.real = DEFAULTS.real; S.feather = DEFAULTS.feather; S.v = 3; }
 const save = () => { try { localStorage.setItem(STORE, JSON.stringify(S)); } catch { /* ignore */ } };
 
@@ -174,6 +176,7 @@ function applyPreset(p) {
     organs: [...cat("organs"), "outline", "bodyOutline"],
     muscles: [...cat("muscles"), "eyes", "outline", "bodyOutline"],
     vessels: [...cat("vessels"), "heart", "outline", "bodyOutline"],
+    nerves: ["nerves", "outline", "bodyOutline"], tendons: ["tendons", "legs", "arms", "outline", "bodyOutline"],
     all: LAYERS,
   }[p] || []);
   for (const k of LAYERS) S[k] = on.has(k) || VESSEL_ZONES.includes(k);   // the zones only matter once a kind of vessel is on

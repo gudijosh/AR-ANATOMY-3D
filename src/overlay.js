@@ -4,7 +4,7 @@ import { loadAnatomy, LABELS, JAW_PIVOT, HEAD_MIDDLE, HAND_JOINTS } from "./anat
 import { createBody, BODY_LAYER_KEYS, BODY_LAYERS, BODY_META } from "./body.js";
 import { OneEuro, OneEuro3 } from "./filter.js";
 const BODY_GROUPS = [["spine", "pelvis", "ribs", "shoulders", "arms", "legs", "feet"],
-  ["heart", "lungs", "liver", "stomach", "intestines", "kidneys", "pancreas", "diaphragm"], ["trunkMuscles", "armMuscles", "legMuscles"], ["arteries", "veins"]];
+  ["heart", "lungs", "liver", "stomach", "intestines", "kidneys", "pancreas", "diaphragm"], ["trunkMuscles", "armMuscles", "legMuscles"], ["arteries", "veins"], ["nerves", "tendons"]];
 import { t, anatomyName } from "./i18n.js";
 
 // Points of the face tracker's own reference face (cm) used to pin the model to the picture.
@@ -142,11 +142,11 @@ export async function createOverlay({ stage, S }) {
   const handMeshes = r => [r.palm, ...r.fingers];
   const body = await createBody({ scene: handScene, material });
   body.setSize(() => W, () => H, x => fx(x));
-  // the blood vessels above the neck ride on the head, and answer to their own layer and to the "head" zone
+  // what the body layers have above the neck (vessels, nerves, ligaments) rides on the head; the vessels also answer to the "head" zone
   for (const hp of body.headParts) {
     const [tint, solidTint] = BODY_LAYERS[hp.layer];
     part(hp.layer + "_head", hp.geo, hp.layer, tint, solidTint, 6).material.uniforms.uNeck.value = 1;
-    parts[hp.layer + "_head"].zone = "vHead";
+    if (hp.layer === "arteries" || hp.layer === "veins") parts[hp.layer + "_head"].zone = "vHead";
   }
 
   function forEachMaterial(fn) {
@@ -287,8 +287,6 @@ export async function createOverlay({ stage, S }) {
     switch (S.reveal) {
       case "left": on = 1; x = 1; w = (S.cut - 0.5) * 16; break;
       case "right": on = 1; x = -1; w = (S.cut - 0.5) * 16; break;
-      case "top": on = 1; x = 0; y = 1; w = -9 + (1 - S.cut) * 22; break;
-      case "bottom": on = 1; x = 0; y = -1; w = 9 - S.cut * 22; break;
     }
     Object.assign(cut, { on, x, y, w });
     jawHinge.updateMatrix(); parts.jaw.mesh.updateMatrix();
@@ -468,7 +466,8 @@ export async function createOverlay({ stage, S }) {
     });
     hands.forEach((rig, i) => {
       const lms = handList[i];
-      if (lms && S.hands) {
+      const hiddenSide = S.reveal === "left" && rightSides[i] || S.reveal === "right" && !rightSides[i];   // one side only: the other hand goes too
+      if (lms && S.hands && !hiddenSide) {
         setHand(rig, lms, rightSides[i]);
         veilHand(sg, lms, (1 - S.real) * 0.92);
         for (const m of handMeshes(rig)) {
@@ -481,7 +480,7 @@ export async function createOverlay({ stage, S }) {
     applyLayers();
     {   // body: glowing layers add up, so share the light between bones, organs and muscles
       const n = BODY_GROUPS.filter(c => c.some(k => S[k])).length, bshare = 1 / (0.4 + 0.6 * Math.max(1, n));
-      body.apply(S, layer => layer === "bodyOutline" ? 1 : bshare);
+      body.apply(S, layer => layer === "bodyOutline" ? 1 : bshare, cut);
     }
 
     let mask = "none", lens = null;

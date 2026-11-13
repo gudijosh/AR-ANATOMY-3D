@@ -24,6 +24,9 @@ const P = {
   // blood vessels: one trunk that branches (arteries carry blood out), two that join (veins bring it back)
   arteries: '<path d="M12 3v6.5"/><path d="M12 9.5c0 3.5-5 3-5 7.5v4"/><path d="M12 9.5c0 3.5 5 3 5 7.5v4"/><path d="M9.5 5.5h5"/>',
   veins: '<path d="M12 21v-6.5"/><path d="M12 14.5c0-3.5-5-3-5-7.5V3"/><path d="M12 14.5c0-3.5 5-3 5-7.5V3"/><path d="M9.5 18.5h5"/>',
+  // nerves (a trunk with side branches) and tendons (a muscle belly narrowing into its cord)
+  nerves: '<path d="M12 3v18"/><path d="M12 7.5c-2.5 0-4.5 1-6 3M12 7.5c2.5 0 4.5 1 6 3M12 12.5c-2.5 0-4.5 1-6 3M12 12.5c2.5 0 4.5 1 6 3M12 17c-1.6 0-3 .7-4 2M12 17c1.6 0 3 .7 4 2"/>',
+  tendons: '<path d="M9 3c-2.2 2.6-2.2 6.4 0 9 1 1.2 1.5 2 1.5 3.5V21M15 3c2.2 2.6 2.2 6.4 0 9-1 1.2-1.5 2-1.5 3.5V21"/><path d="M10.5 17.5h3"/>',
   // muscles
   muscles: '<path d="M12 3c-4 0-6.5 3-6.5 7 0 5 3 10.5 6.5 10.5s6.5-5.5 6.5-10.5c0-4-2.5-7-6.5-7z"/><path d="M8.5 7.5c1.5 1 2.6 2.5 3.5 4.5.9-2 2-3.5 3.5-4.5M9 15.5c1 .8 2 1.1 3 1.1s2-.3 3-1.1"/>',
   trunkMuscles: '<path d="M7 4c1.5 1 3 1.5 5 1.5S15.5 5 17 4l1.5 5-1.5 3 .5 8.5h-11l.5-8.5-1.5-3z"/><path d="M12 5.5v15M9 10.5h6M9 14h6M9 17.5h6"/>',
