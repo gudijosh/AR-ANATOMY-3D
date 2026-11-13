@@ -130,6 +130,7 @@ const SLIDERS = ["bright", "real", "feather", "cut", "fs", "fw", "fh", "fd", "fx
 const S = { ...DEFAULTS };
 try { Object.assign(S, JSON.parse(localStorage.getItem(STORE) || "{}")); } catch { /* ignore */ }
 // settings saved before the starting values changed (fully see-through, sharp edges) take the new ones once
+if (S.reveal === "top" || S.reveal === "bottom") S.reveal = "whole";   // those two ways of cutting the head are gone
 if (S.v !== 3) { if (S.v !== 2) S.real = DEFAULTS.real; S.feather = DEFAULTS.feather; S.v = 3; }
 const save = () => { try { localStorage.setItem(STORE, JSON.stringify(S)); } catch { /* ignore */ } };
 

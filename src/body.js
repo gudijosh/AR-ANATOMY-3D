@@ -241,7 +241,13 @@ export async function createBody({ scene, material }) {
     m.makeBasis(hx, hy.multiplyScalar(thick), zz.multiplyScalar(thick)).setPosition(he);
   }
 
-  function apply(S, gainFor) {
+  // Showing one side only: the trunk is cut down its own middle (its pieces are stored with x running from the right
+  // shoulder to the left one), and an arm or a leg shows whole or not at all, whichever way it is bent across the body.
+  const cutTorso = new THREE.Matrix4().makeScale(meta.shoulderW, 1, 1);
+  const cutSide = { L: new THREE.Matrix4().set(0, 0, 0, 40, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1), R: new THREE.Matrix4().set(0, 0, 0, -40, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1) };
+  const cutNow = { on: 0, x: 1, w: 0 };
+  function apply(S, gainFor, cut) {
+    Object.assign(cutNow, cut || { on: 0 });
     const solid = S.style === "solid";
     let any = false;
     for (const s of Object.values(segs)) {
@@ -258,6 +264,8 @@ export async function createBody({ scene, material }) {
       const u = m.mesh.material.uniforms;
       u.uGain.value = solid && !m.fixed ? Math.min(1.25, 0.6 + 0.4 * S.bright) : S.bright * BODY_LAYERS[m.layer][2] * gainFor(m.layer);
       u.uEdge.value = S.feather * 0.75;
+      u.uCutOn.value = cutNow.on; u.uPlane.value.set(cutNow.x, 0, 0, cutNow.w); u.uCutSoft.value = S.feather * 5;
+      u.uLocal.value.copy(m.seg === "torso" ? cutTorso : cutSide[m.seg.slice(-1)]);
     }
     return any;
   }
@@ -272,6 +280,7 @@ export async function createBody({ scene, material }) {
       if (!S[l.layer]) continue;
       for (const at of l.at) {
         const s = segs[at.seg]; if (!s.on || VESSELS.has(l.layer) && !S[vesselZone(at.seg)]) continue;
+        if (cutNow.on && cutNow.x * (at.seg === "torso" ? at.pt[0] * meta.shoulderW : at.seg.endsWith("L") ? 40 : -40) < cutNow.w) continue;   // on the hidden side
         L3.fromArray(at.pt);
         if (s.kind === "torso") {
           const t = THREE.MathUtils.smoothstep(at.pt[1], 0, 0.85);
