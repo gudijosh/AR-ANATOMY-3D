@@ -4,7 +4,7 @@ import { loadAnatomy, LABELS, JAW_PIVOT, HEAD_MIDDLE, HAND_JOINTS } from "./anat
 import { createBody, BODY_LAYER_KEYS, BODY_META } from "./body.js";
 import { OneEuro, OneEuro3 } from "./filter.js";
 const BODY_GROUPS = [["spine", "pelvis", "ribs", "shoulders", "arms", "legs", "feet"],
-  ["heart", "lungs", "liver", "stomach", "intestines", "kidneys", "pancreas", "diaphragm"], ["trunkMuscles", "armMuscles", "legMuscles"]];
+  ["heart", "lungs", "liver", "stomach", "intestines", "kidneys", "pancreas", "diaphragm"], ["trunkMuscles", "armMuscles", "legMuscles"], ["arteries", "veins"]];
 import { t, anatomyName } from "./i18n.js";
 
 // Points of the face tracker's own reference face (cm) used to pin the model to the picture.

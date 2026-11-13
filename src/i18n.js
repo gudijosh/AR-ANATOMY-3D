@@ -14,7 +14,7 @@ const UI = {
     "all": "All",
     "h.layers": "Layers", "h.look": "Look", "h.mixed": "Mixed reality", "h.fit": "Fit to my head",
     "p.head": "Head", "p.skeleton": "Skeleton", "p.organs": "Organs", "p.skull": "Skull", "p.brain": "Brain", "p.muscles": "Muscles", "p.all": "Everything",
-    "cat.bones": "Bones", "cat.organs": "Organs", "cat.muscles": "Muscles", "cat.skin": "Skin outline",
+    "cat.bones": "Bones", "cat.organs": "Organs", "cat.vessels": "Vessels", "cat.all.vessels": "All blood vessels", "l.arteries": "Arteries", "l.veins": "Veins", "cat.muscles": "Muscles", "cat.skin": "Skin outline",
     "cat.all.bones": "All bones", "cat.all.organs": "All organs", "cat.all.muscles": "All muscles", "cat.all.skin": "Whole skin outline",
     "l.skull": "Skull", "l.spine": "Spine", "l.ribs": "Ribs & sternum", "l.shoulders": "Shoulder blades", "l.arms": "Arms",
     "l.hands": "Hands", "l.pelvis": "Pelvis", "l.legs": "Legs", "l.feet": "Feet",
@@ -73,7 +73,7 @@ const UI = {
     "all": "Todo",
     "h.layers": "Capas", "h.look": "Aspecto", "h.mixed": "Realidad mixta", "h.fit": "Ajustar a mi cabeza",
     "p.head": "Cabeza", "p.skeleton": "Esqueleto", "p.organs": "Órganos", "p.skull": "Cráneo", "p.brain": "Cerebro", "p.muscles": "Músculos", "p.all": "Todo",
-    "cat.bones": "Huesos", "cat.organs": "Órganos", "cat.muscles": "Músculos", "cat.skin": "Contorno de la piel",
+    "cat.bones": "Huesos", "cat.organs": "Órganos", "cat.vessels": "Vasos", "cat.all.vessels": "Todos los vasos sanguíneos", "l.arteries": "Arterias", "l.veins": "Venas", "cat.muscles": "Músculos", "cat.skin": "Contorno de la piel",
     "cat.all.bones": "Todos los huesos", "cat.all.organs": "Todos los órganos", "cat.all.muscles": "Todos los músculos", "cat.all.skin": "Todo el contorno",
     "l.skull": "Cráneo", "l.spine": "Columna", "l.ribs": "Costillas y esternón", "l.shoulders": "Clavículas y escápulas", "l.arms": "Brazos",
     "l.hands": "Manos", "l.pelvis": "Pelvis", "l.legs": "Piernas", "l.feet": "Pies",
@@ -149,12 +149,20 @@ const NAMES_ES = {
   "Tensor fasciae latae": "Tensor de la fascia lata", "Gastrocnemius": "Gastrocnemio (gemelos)", "Soleus": "Sóleo",
   "Tibialis anterior": "Tibial anterior", "Fibularis longus": "Peroneo largo", "Iliopsoas": "Iliopsoas", "Infraspinatus": "Infraespinoso",
   "Teres major": "Redondo mayor", "Rhomboid major": "Romboides mayor", "Erector spinae": "Erector de la columna",
+  "Aortic arch": "Arco aórtico", "Abdominal aorta": "Aorta abdominal", "Common carotid artery": "Arteria carótida común",
+  "Subclavian artery": "Arteria subclavia", "Brachial artery": "Arteria braquial", "Radial artery": "Arteria radial", "Ulnar artery": "Arteria cubital",
+  "Common iliac artery": "Arteria ilíaca común", "Femoral artery": "Arteria femoral", "Popliteal artery": "Arteria poplítea",
+  "Anterior tibial artery": "Arteria tibial anterior", "Posterior tibial artery": "Arteria tibial posterior", "Renal artery": "Arteria renal",
+  "Pulmonary trunk": "Tronco pulmonar", "Coronary artery": "Arteria coronaria", "Superior vena cava": "Vena cava superior",
+  "Inferior vena cava": "Vena cava inferior", "Internal jugular vein": "Vena yugular interna", "Subclavian vein": "Vena subclavia",
+  "Brachiocephalic vein": "Vena braquiocefálica", "Cephalic vein": "Vena cefálica", "Basilic vein": "Vena basílica", "Femoral vein": "Vena femoral",
+  "Great saphenous vein": "Vena safena mayor", "Popliteal vein": "Vena poplítea", "Portal vein": "Vena porta", "Renal vein": "Vena renal",
   "Flexor carpi radialis": "Flexor radial del carpo", "Extensor digitorum": "Extensor de los dedos", "Pronator teres": "Pronador redondo",
 };
 // nicer English for some dataset names
 const NAMES_EN = {
   "Cervical vertebral column": "Cervical vertebrae", "Thoracic vertebral column": "Thoracic vertebrae", "Lumbar vertebral column": "Lumbar vertebrae",
-  "Foot": "Foot bones",
+  "Foot": "Foot bones", "Arch of aorta": "Aortic arch", "Hepatic portal vein": "Portal vein",
 };
 
 const KEY = "ar-anatomy-3d-lang";

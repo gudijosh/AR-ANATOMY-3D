@@ -45,11 +45,12 @@ const CATEGORIES = [
     ["hands", "#b9c6d2"], ["pelvis", "#bfe3ff"], ["legs", "#bfe3ff"], ["feet", "#bfe3ff"]] },
   { id: "organs", dot: "#ff9fc0", icon: "heart", items: [["brain", "#ff9fc0"], ["eyes", "#f3d65a"], ["heart", "#ff5d73"], ["lungs", "#ff9fc0"], ["liver", "#ffa25e"],
     ["stomach", "#ffd27a"], ["intestines", "#ffbf9c"], ["kidneys", "#ff7f6b"], ["pancreas", "#fff08a"], ["diaphragm", "#d59bff"]] },
+  { id: "vessels", dot: "#ff4d5e", icon: "arteries", items: [["arteries", "#ff4d5e"], ["veins", "#6f8dff"]] },
   { id: "muscles", dot: "#ff6b5e", icon: "armMuscles", items: [["muscles", "#ff6b5e"], ["trunkMuscles", "#ff6b5e"], ["armMuscles", "#ff6b5e"], ["legMuscles", "#ff6b5e"]] },
   { id: "skin", dot: "#6fb6ff", icon: "bodyOutline", items: [["outline", "#6fb6ff"], ["bodyOutline", "#6fb6ff"]] },
 ];
 const BODY_KEYS = ["spine", "ribs", "shoulders", "arms", "pelvis", "legs", "feet", "heart", "lungs", "liver", "stomach", "intestines",
-  "kidneys", "pancreas", "diaphragm", "trunkMuscles", "armMuscles", "legMuscles", "bodyOutline"];
+  "kidneys", "pancreas", "diaphragm", "arteries", "veins", "trunkMuscles", "armMuscles", "legMuscles", "bodyOutline"];
 const DEFAULTS = {
   skull: true, brain: false, muscles: false, eyes: true, outline: true, hands: true,
   ...Object.fromEntries(BODY_KEYS.map(k => [k, false])),
@@ -163,6 +164,7 @@ function applyPreset(p) {
     skeleton: [...cat("bones"), "outline", "bodyOutline"],
     organs: [...cat("organs"), "outline", "bodyOutline"],
     muscles: [...cat("muscles"), "eyes", "outline", "bodyOutline"],
+    vessels: [...cat("vessels"), "heart", "outline", "bodyOutline"],
     all: LAYERS,
   }[p] || []);
   for (const k of LAYERS) S[k] = on.has(k);
