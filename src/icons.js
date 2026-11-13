@@ -37,4 +37,7 @@ const P = {
   chevron: '<path d="M6 9l6 6 6-6"/>',
 };
 
+// the zones of the blood vessels reuse the drawings of the same parts of the body
+Object.assign(P, { vHead: P.outline, vTorso: P.trunkMuscles, vArms: P.armMuscles, vLegs: P.legMuscles });
+
 export const icon = name => `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">${P[name] || ""}</svg>`;

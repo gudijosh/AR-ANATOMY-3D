@@ -18,6 +18,9 @@ export const BODY_LAYERS = {
   bodyOutline: [0x6fb6ff, 0x6fb6ff, 0.55],
 };
 export const BODY_LAYER_KEYS = Object.keys(BODY_LAYERS);
+// blood vessels are also switched by zone of the body (the head's are drawn with the head)
+const VESSELS = new Set(["arteries", "veins"]);
+const vesselZone = seg => seg === "torso" ? "vTorso" : /arm/.test(seg) ? "vArms" : "vLegs";
 const LABEL_INK = { bone: "#d9f0ff", organ: "#ffd0dc", muscle: "#ffb3aa" };
 const inkOf = layer => /Muscles$/.test(layer) ? LABEL_INK.muscle : BODY_LAYERS[layer] && BODY_LAYERS[layer][0] === 0xbfe3ff ? LABEL_INK.bone : LABEL_INK.organ;
 const POSE_IDS = [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32];
@@ -31,7 +34,7 @@ export async function createBody({ scene, material }) {
     const group = new THREE.Group(); group.visible = false; scene.add(group);
     segs[k] = { ...s, key: k, group, meshes: [], matrix: new THREE.Matrix4(), hip: new THREE.Matrix4(), on: false };
   }
-  const meshes = [];
+  const meshes = [], headParts = [];   // headParts: pieces above the neck, which the head tracker carries (the overlay adds them to the head)
   for (const m of meta.meshes) {
     const q = new Uint16Array(buf, m.offV, m.nv * 3), pos = new Float32Array(m.nv * 3);
     for (let i = 0; i < q.length; i++) pos[i] = m.min[i % 3] + q[i] / 65535 * m.size[i % 3];
@@ -39,6 +42,7 @@ export async function createBody({ scene, material }) {
     geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
     geo.setIndex(new THREE.BufferAttribute(new Uint16Array(buf, m.offI, m.ni).slice(), 1));
     geo.computeVertexNormals();
+    if (m.seg === "head") { headParts.push({ layer: m.layer, geo }); continue; }
     const [tint, body] = BODY_LAYERS[m.layer] || [0xffffff, 0xffffff];
     const mat = material(tint, body, 0);
     mat.uniforms.uFlatView.value = 1;
@@ -249,7 +253,7 @@ export async function createBody({ scene, material }) {
       }
     }
     for (const m of meshes) {
-      const on = !!S[m.layer];
+      const on = !!S[m.layer] && (!VESSELS.has(m.layer) || !!S[vesselZone(m.seg)]);
       m.mesh.visible = on; any = any || on;
       const u = m.mesh.material.uniforms;
       u.uGain.value = solid && !m.fixed ? Math.min(1.25, 0.6 + 0.4 * S.bright) : S.bright * BODY_LAYERS[m.layer][2] * gainFor(m.layer);
@@ -267,7 +271,7 @@ export async function createBody({ scene, material }) {
     for (const l of meta.labels) {
       if (!S[l.layer]) continue;
       for (const at of l.at) {
-        const s = segs[at.seg]; if (!s.on) continue;
+        const s = segs[at.seg]; if (!s.on || VESSELS.has(l.layer) && !S[vesselZone(at.seg)]) continue;
         L3.fromArray(at.pt);
         if (s.kind === "torso") {
           const t = THREE.MathUtils.smoothstep(at.pt[1], 0, 0.85);
@@ -307,5 +311,5 @@ export async function createBody({ scene, material }) {
     g.restore();
   }
 
-  return { update, apply, eachMaterial, labelItems, setSize, reset, clearHandArms, setHandArm, drawVeil, get found() { return found; } };
+  return { update, apply, eachMaterial, labelItems, setSize, reset, clearHandArms, setHandArm, drawVeil, headParts, get found() { return found; } };
 }

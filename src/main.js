@@ -45,15 +45,18 @@ const CATEGORIES = [
     ["hands", "#b9c6d2"], ["pelvis", "#bfe3ff"], ["legs", "#bfe3ff"], ["feet", "#bfe3ff"]] },
   { id: "organs", dot: "#ff9fc0", icon: "heart", items: [["brain", "#ff9fc0"], ["eyes", "#f3d65a"], ["heart", "#ff5d73"], ["lungs", "#ff9fc0"], ["liver", "#ffa25e"],
     ["stomach", "#ffd27a"], ["intestines", "#ffbf9c"], ["kidneys", "#ff7f6b"], ["pancreas", "#fff08a"], ["diaphragm", "#d59bff"]] },
-  { id: "vessels", dot: "#ff4d5e", icon: "arteries", items: [["arteries", "#ff4d5e"], ["veins", "#6f8dff"]] },
+  { id: "vessels", dot: "#ff4d5e", icon: "arteries", items: [["arteries", "#ff4d5e"], ["veins", "#6f8dff"],
+    ["vHead", "#e7b7c8"], ["vTorso", "#e7b7c8"], ["vArms", "#e7b7c8"], ["vLegs", "#e7b7c8"]] },   // the last four choose where the vessels show
   { id: "muscles", dot: "#ff6b5e", icon: "armMuscles", items: [["muscles", "#ff6b5e"], ["trunkMuscles", "#ff6b5e"], ["armMuscles", "#ff6b5e"], ["legMuscles", "#ff6b5e"]] },
   { id: "skin", dot: "#6fb6ff", icon: "bodyOutline", items: [["outline", "#6fb6ff"], ["bodyOutline", "#6fb6ff"]] },
 ];
+const VESSEL_KINDS = ["arteries", "veins"], VESSEL_ZONES = ["vHead", "vTorso", "vArms", "vLegs"];
 const BODY_KEYS = ["spine", "ribs", "shoulders", "arms", "pelvis", "legs", "feet", "heart", "lungs", "liver", "stomach", "intestines",
   "kidneys", "pancreas", "diaphragm", "arteries", "veins", "trunkMuscles", "armMuscles", "legMuscles", "bodyOutline"];
 const DEFAULTS = {
   skull: true, brain: false, muscles: false, eyes: true, outline: true, hands: true,
   ...Object.fromEntries(BODY_KEYS.map(k => [k, false])),
+  vHead: true, vTorso: true, vArms: true, vLegs: true,
   style: "xray", bright: 1, real: 1, feather: 0, reveal: "whole", cut: 0.5, showdata: false,
   fs: 1, fw: 1, fh: 1, fd: 1, fx: 0, fy: 0, fz: 0, labels: false,
   openCats: [],   // which sections of the "what to see" menu are expanded
@@ -148,7 +151,13 @@ function showSettings() {
   $("cutrow").hidden = S.reveal === "whole";
   $("cutlabel").textContent = t(S.reveal === "lens" ? "lens" : "cut");
 }
-for (const k of LAYERS) $("L_" + k).addEventListener("change", e => { S[k] = e.target.checked; save(); showCategories(); });
+for (const k of LAYERS) $("L_" + k).addEventListener("change", e => {
+  S[k] = e.target.checked;
+  // vessels need a kind (arteries, veins) and a zone: switching one on with none of the other chosen turns the others on
+  if (S[k] && VESSEL_KINDS.includes(k) && !VESSEL_ZONES.some(z => S[z])) for (const z of VESSEL_ZONES) S[z] = true;
+  if (S[k] && VESSEL_ZONES.includes(k) && !VESSEL_KINDS.some(z => S[z])) for (const z of VESSEL_KINDS) S[z] = true;
+  save(); showSettings();
+});
 for (const b of $("style").children) b.addEventListener("click", () => { S.style = b.dataset.style; save(); showSettings(); overlay && overlay.applyStyle(); });
 for (const k of SLIDERS) $(k).addEventListener("input", e => { S[k] = parseFloat(e.target.value); save(); showSettings(); });
 $("labels").addEventListener("change", e => { S.labels = e.target.checked; save(); });
@@ -167,7 +176,7 @@ function applyPreset(p) {
     vessels: [...cat("vessels"), "heart", "outline", "bodyOutline"],
     all: LAYERS,
   }[p] || []);
-  for (const k of LAYERS) S[k] = on.has(k);
+  for (const k of LAYERS) S[k] = on.has(k) || VESSEL_ZONES.includes(k);   // the zones only matter once a kind of vessel is on
   save(); showSettings();
 }
 translatePage(); showSettings(); drawStatus();
