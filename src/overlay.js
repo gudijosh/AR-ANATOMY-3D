@@ -456,7 +456,8 @@ export async function createOverlay({ stage, S }) {
     const bodyOn = BODY_LAYER_KEYS.some(k => S[k]);
     if (bodyOn && bodyPose && bodyPose.mask) body.drawVeil(sg, bodyPose.mask, (1 - S.real) * 0.9, S.feather * 14);
     body.clearHandArms();
-    if (S.arms || S.armMuscles) handList.forEach((lms, i) => {
+    // every layer with something on a forearm (bones, muscles, nerves, tendons, vessels of the arms)
+    if (S.arms || S.armMuscles || S.nerves || S.tendons || (S.vArms && (S.arteries || S.veins))) handList.forEach((lms, i) => {
       // the hand's size on screen: the larger of its length and its width (either can look short when it tilts)
       const span = (a, b) => Math.hypot((lms[a].x - lms[b].x) * W, (lms[a].y - lms[b].y) * H);
       const k = Math.max(span(0, 9) / HAND_LEN_CM, span(5, 17) / HAND_WIDTH_CM);
@@ -526,7 +527,7 @@ export async function createOverlay({ stage, S }) {
         [t("d.fit"), t("d.fitValue", { k: pose.k.toFixed(3), x: pose.dx.toFixed(3), y: pose.dy.toFixed(3) })]);
     } else rows.push([t("d.face"), t("d.notFound")]);
     rows.push([t("d.hands"), handList.length ? handList.map((h, i) => t(rightSides[i] ? "d.right" : "d.left")).join(" + ") : t("d.none")]);
-    if (handList[0]) rows.push([t("d.tip"), `${(1 - handList[0][8].x).toFixed(2)}, ${handList[0][8].y.toFixed(2)}`]);
+    if (handList[0]) rows.push([t("d.tip"), `${(flipped ? 1 - handList[0][8].x : handList[0][8].x).toFixed(2)}, ${handList[0][8].y.toFixed(2)}`]);
     rows.push([t("d.layers"), LAYERS.filter(k => S[k]).map(k => t("l." + k).toLowerCase()).join(", ") || t("d.none")],
       [t("d.speed"), t("d.fps", { n: fps })]);
     const pad = Math.max(...rows.map(r => r[0].length)) + 2;
