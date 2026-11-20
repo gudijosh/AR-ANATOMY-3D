@@ -80,8 +80,8 @@ export async function createBody({ scene, material }) {
   const GAP_MS = 300;
   function update(lms, W, H, now = performance.now(), headRef = 0, world = null) {
     if (!lms) {   // keep the last pose for a moment, so a single missed frame doesn't make it blink
+      if (!lostAt) lostAt = now;   // (this used to be noted after the test below, so the very first missed frame hid the body)
       if (found && now - lostAt > 400) { found = false; for (const s of Object.values(segs)) s.group.visible = false; for (const i of POSE_IDS) { filt[i].reset(); fresh[i] = true; } scaleF.reset(); haveScale = false; deadRef = 0; }
-      if (!lostAt) lostAt = now;
       return;
     }
     lostAt = 0;

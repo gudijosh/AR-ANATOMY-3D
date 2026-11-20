@@ -30,7 +30,8 @@ const PHOTO = (() => {
 })();
 
 async function photoStream(url, crop) {
-  const img = new Image(); img.src = url; await img.decode();
+  const img = new Image();   // waits for the load itself: decode() can stay pending for a picture that is never put on the page
+  await new Promise((ok, fail) => { img.onload = ok; img.onerror = () => fail(new Error("picture not found")); img.src = url; });
   const [cx, cy, cw, ch] = crop && crop.length === 4 ? crop : [0, 0, img.naturalWidth, img.naturalHeight];
   const c = document.createElement("canvas"); c.width = 960; c.height = Math.round(960 * ch / cw);
   const g = c.getContext("2d"), draw = () => g.drawImage(img, cx, cy, cw, ch, 0, 0, c.width, c.height);
@@ -64,7 +65,10 @@ const DEFAULTS = {
 };
 const STORE = "ar-anatomy-3d-settings";
 const LAYERS = CATEGORIES.flatMap(c => c.items.map(i => i[0]));
-const bodyActive = () => BODY_KEYS.some(k => S[k]);
+// a layer of the body below the neck is switched on (vessels count only when one of their zones below the neck is)
+const bodyActive = () => BODY_KEYS.some(k => S[k] && (!VESSEL_KINDS.includes(k) || S.vTorso || S.vArms || S.vLegs));
+// a layer that has something to draw on a forearm: a hand seen close up brings its forearm along for these
+const forearmActive = () => S.arms || S.armMuscles || S.nerves || S.tendons || (S.vArms && (S.arteries || S.veins));
 
 // the "what to see" menu: one section per category that expands and collapses, with a switch for the whole section
 // and a big tile with its own icon for every part
@@ -128,9 +132,21 @@ function showCategories() {
 }
 const SLIDERS = ["bright", "real", "feather", "cut", "fs", "fw", "fh", "fd", "fx", "fy", "fz"];
 const S = { ...DEFAULTS };
-try { Object.assign(S, JSON.parse(localStorage.getItem(STORE) || "{}")); } catch { /* ignore */ }
+try { const saved = JSON.parse(localStorage.getItem(STORE) || "{}"); if (saved && typeof saved === "object" && !Array.isArray(saved)) Object.assign(S, saved); } catch { /* ignore */ }
+// Saved settings can be old, half-written or edited by hand, and a test link can put anything in: every value is brought
+// back to something the page can show (a wrong type or a number out of range used to stop the page while it was starting).
+function sanitize() {
+  for (const k in DEFAULTS) if (typeof DEFAULTS[k] === "boolean" && typeof S[k] !== "boolean") S[k] = DEFAULTS[k];
+  for (const k of SLIDERS) {
+    const el = $(k), lo = parseFloat(el.min), hi = parseFloat(el.max);
+    S[k] = typeof S[k] === "number" && Number.isFinite(S[k]) ? Math.min(hi, Math.max(lo, S[k])) : DEFAULTS[k];
+  }
+  if (S.style !== "xray" && S.style !== "solid") S.style = DEFAULTS.style;
+  if (!["whole", "left", "right", "lens"].includes(S.reveal)) S.reveal = DEFAULTS.reveal;   // also the two ways of cutting the head that are gone
+  S.openCats = Array.isArray(S.openCats) ? S.openCats.filter(id => CATEGORIES.some(c => c.id === id)) : [];
+}
+sanitize();
 // settings saved before the starting values changed (fully see-through, sharp edges) take the new ones once
-if (S.reveal === "top" || S.reveal === "bottom") S.reveal = "whole";   // those two ways of cutting the head are gone
 if (S.v !== 3) { if (S.v !== 2) S.real = DEFAULTS.real; S.feather = DEFAULTS.feather; S.v = 3; }
 const save = () => { try { localStorage.setItem(STORE, JSON.stringify(S)); } catch { /* ignore */ } };
 
@@ -180,7 +196,7 @@ function applyPreset(p) {
     all: LAYERS,
   }[p] || []);
   for (const k of LAYERS) S[k] = on.has(k) || VESSEL_ZONES.includes(k);   // the zones only matter once a kind of vessel is on
-  save(); showSettings();
+  showSettings();   // not saved: a test link must not replace what the person had chosen
 }
 translatePage(); showSettings(); drawStatus();
 for (const b of document.querySelectorAll("[data-lang]")) b.addEventListener("click", () => setLang(b.dataset.lang));
@@ -191,7 +207,8 @@ onLangChange(() => { showSettings(); drawStatus(); });
 let lensAt = { x: 0, y: 0 }, lensDrag = null;     // lensAt: how far the lens is from the middle of the window, in px
 const lensPoint = () => {
   const r = stage.getBoundingClientRect();
-  return { x: innerWidth / 2 + lensAt.x - r.left, y: innerHeight / 2 + lensAt.y - r.top };
+  const hw = innerWidth / 2, hh = innerHeight / 2;   // still inside the window after it was made smaller or turned
+  return { x: hw + Math.max(-hw, Math.min(hw, lensAt.x)) - r.left, y: hh + Math.max(-hh, Math.min(hh, lensAt.y)) - r.top };
 };
 stage.addEventListener("pointerdown", e => {
   if (S.reveal !== "lens") return;
@@ -235,7 +252,7 @@ async function loadTrackers() {
 }
 
 function runLive() {
-  let lastFrame = -1, lostSince = 0, said = "";
+  let lastFrame = -1, lostSince = 0, said = "", bodyMissing = 0;
   const say = (key, c, vars) => { const id = key + JSON.stringify(vars || ""); if (said !== id || statusNow.key !== key) { said = id; setStatus(key, c, vars); } };
   const tick = () => {
     requestAnimationFrame(tick);
@@ -261,7 +278,7 @@ function runLive() {
       if (!lostSince) lostSince = now;
       if (now - lostSince > 250) overlay.loseHead();
     }
-    if (hand && (S.hands || S.arms || S.armMuscles || S.showdata)) run(() => {
+    if (hand && (S.hands || forearmActive() || S.showdata)) run(() => {
       const hr = hand.detectForVideo(video, now);
       const list = hr.landmarks || [], sides = hr.handedness || hr.handednesses || [];
       // the tracker names hands as if the picture were flipped; ours isn't, so swap them
@@ -273,7 +290,8 @@ function runLive() {
       const pr = body.detectForVideo(video, now);
       if (pr.landmarks && pr.landmarks[0]) {
         const mk = pr.segmentationMasks && pr.segmentationMasks[0];
-        const mask = mk ? { data: Float32Array.from(mk.getAsFloat32Array()), width: mk.width, height: mk.height } : null;
+        // the person's outline only darkens the real body under the anatomy: fully see-through, it isn't read back at all
+        const mask = mk && S.real < 0.99 ? { data: Float32Array.from(mk.getAsFloat32Array()), width: mk.width, height: mk.height } : null;
         if (mk && mk.close) mk.close();
         bodyPose = { lms: pr.landmarks[0], world: pr.worldLandmarks && pr.worldLandmarks[0], mask };
         if (PHOTO) window.__bodyPose = bodyPose.lms;   // test mode only: lets a test read the raw points
@@ -281,7 +299,11 @@ function runLive() {
     });
     const found = overlay.headFound;
     if (failed && !found && !handList.length && !bodyPose) { say("st.trackerError", "bad", { msg: failed.message }); return; }
-    if (!flipBusy) say(found ? (handList.length ? "st.trackingHands" : "st.tracking") : handList.length ? "st.handOnly" : bodyPose ? "st.bodyOnly" : "st.noFace",
+    // body layers are on but no body is in the picture (and no hand is lending its forearm): say what to do about it
+    const wantBody = bodyActive() && !bodyPose && !(handList.length && forearmActive());
+    bodyMissing = wantBody ? bodyMissing || now : 0;
+    if (!flipBusy && bodyMissing && now - bodyMissing > 2500) say(body ? "st.bodyHint" : "st.bodyUnavailable", "");
+    else if (!flipBusy) say(found ? (handList.length ? "st.trackingHands" : "st.tracking") : handList.length ? "st.handOnly" : bodyPose ? "st.bodyOnly" : "st.noFace",
       found || handList.length || bodyPose ? "ok" : "bad");
     overlay.render(now, faceLms, handList, rightSides, lensPoint(), bodyPose);
   };
@@ -300,7 +322,7 @@ function runDemo() {
   // optional preview settings for the demo only (not saved): ?preset=all&style=solid&labels
   const preset = params.get("preset");
   if (preset) applyPreset(preset);
-  if (params.get("style")) { S.style = params.get("style"); showSettings(); overlay.applyStyle(); }
+  if (params.get("style")) { S.style = params.get("style"); sanitize(); showSettings(); overlay.applyStyle(); }
   if (params.has("labels")) { S.labels = true; showSettings(); }
   if (params.get("lang")) setLang(params.get("lang"));
   // test settings: ?turn=1.5 makes the pretend body turn further (radians), ?noface hides the face from the body's sizing
@@ -365,17 +387,27 @@ async function reviveCamera() {
   if (tr && tr.readyState === "live") { if (video.paused) video.play().catch(() => { /* ignore */ }); return; }
   flipBusy = true;
   try { stopCamera(); await showStream(await openCamera(camWhich)); setStatus("st.tracking", "ok"); }
-  catch { setStatus("st.cameraLost", "bad"); }
+  catch { cameraGone(); }
   flipBusy = false;
+}
+// no camera can be opened any more: clear the picture and offer the start button again, instead of a frozen screen
+function cameraGone() {
+  stopCamera(); camWanted = false;
+  video.hidden = true; $("flip").hidden = true;
+  if (overlay) { overlay.setView(viewFlipped); overlay.render(performance.now(), null, [], [], lensPoint(), null); }
+  $("intro").hidden = false; $("start").disabled = false;
+  setStatus("st.cameraLost", "bad");
 }
 document.addEventListener("visibilitychange", reviveCamera);
 // the flip button only appears when the device really has another camera
 async function offerFlip() {
   try {
     const cams = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === "videoinput");
-    $("flip").hidden = cams.length < 2;
+    $("flip").hidden = cams.length < 2 || !camStream;
   } catch { $("flip").hidden = true; }
 }
+// a camera plugged in or pulled out later
+if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) navigator.mediaDevices.addEventListener("devicechange", () => { if (live && !PHOTO) offerFlip(); });
 $("flip").addEventListener("click", async () => {
   if (flipBusy || !camStream) return;
   flipBusy = true; $("flip").disabled = true;
@@ -397,12 +429,15 @@ $("flip").addEventListener("click", async () => {
     setStatus("st.tracking", "ok");
   } catch {
     try { stopCamera(); await showStream(await openCamera(back)); camWhich = back; setStatus("st.flipFailed", "bad"); }
-    catch { setStatus("st.cameraLost", "bad"); }
+    catch { cameraGone(); }
   }
   flipBusy = false; $("flip").disabled = false;
 });
 
 // ------------------------------------------------------------ start
+// The start button comes back after a failure or a lost camera, so everything here can run more than once:
+// what is already loaded is kept, and the frame loop is only ever started once.
+let live = false;
 $("start").addEventListener("click", async () => {
   $("start").disabled = true;
   let step = "step.camera";
@@ -419,12 +454,13 @@ $("start").addEventListener("click", async () => {
     if (!overlay) await loadOverlay();
     step = "step.trackers";
     setStatus("st.loadingTrackers");
-    await loadTrackers();
+    if (!face) await loadTrackers();
     if (!hand) $("L_hands").disabled = true;
     overlay.resize(); overlay.setView(viewFlipped);
-    runLive();
+    if (!live) { live = true; runLive(); }
     if (!PHOTO) offerFlip();
   } catch (err) {
+    stopCamera(); camWanted = false;   // don't leave the camera running behind the start screen
     $("start").disabled = false;
     $("intro").hidden = false; video.hidden = true;
     const denied = err && (err.name === "NotAllowedError" || err.name === "SecurityError");
@@ -436,9 +472,9 @@ $("start").addEventListener("click", async () => {
 if (PHOTO) {   // optional preview settings, as in the demo
   const params = new URLSearchParams(location.search), preset = params.get("preset");
   if (preset) applyPreset(preset);
-  if (params.get("style")) { S.style = params.get("style"); showSettings(); }
+  if (params.get("style")) { S.style = params.get("style"); sanitize(); showSettings(); }
   if (params.has("labels")) { S.labels = true; showSettings(); }
-  if (params.get("real")) { S.real = +params.get("real"); showSettings(); }
+  if (params.get("real")) { S.real = +params.get("real"); sanitize(); showSettings(); }
   if (params.has("data")) { S.showdata = true; showSettings(); }
   $("start").click();
 }
